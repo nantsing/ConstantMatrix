@@ -161,6 +161,7 @@ struct vec{
 
 int a[100][100];
 CSD csd[100][100];
+vec pool[100000];
 int main() {
     
     int n, m;
@@ -185,9 +186,9 @@ int main() {
         cout << endl;
     }
 
-    vector<vec> pool;
+    int num = 0;
     for (int i = 0; i < m; i++) {
-        pool.push_back(vec(m, i, w));
+        pool[num++] = (vec(m, i, w));
     }
     for (int i = 0; i < n; i++) {
         vector<pair<vec*, pair<int, bool> > > source;
@@ -200,14 +201,14 @@ int main() {
                 }
             }
         }
-        pool.push_back(vec(source));
+        pool[num++] = (vec(source));
     }
     
     double total_cost = 0;
     int total_cost_x = 0;
     int total_cost_b = 0;
     int total_cost_c = 0;
-    for(int i = 0; i < pool.size(); i++) {
+    for(int i = 0; i < num; i++) {
         cout <<"("<< pool[i] << ") width:" << pool[i].width << " cost:" << pool[i].cost() << endl;
         total_cost += pool[i].cost();
         total_cost_x += pool[i].cost_x;

@@ -63,6 +63,7 @@ struct vec{
     vector<pair<vec* ,pair<int, bool> > > source;
     bool isRoot;
     int width;
+    int cost_x, cost_c, cost_b;
     vec() {
         isRoot = false;
         width = 0;
@@ -97,6 +98,9 @@ struct vec{
         double cost = 0;
         int max_width = 0;
         int min_width = 100000;
+        cost_x = 0;
+        cost_c = 0;
+        cost_b = 0;
         if (isRoot) {
             return 0;
         }
@@ -109,12 +113,16 @@ struct vec{
                 min_width = wi;
             }
             cost += wi;
+            cost_x += wi;
             if (source[i].second.second) {
                 cost += b * wi;
+                cost_b += wi;
             }
         }
         cost += c * max_width;
+        cost_c = max_width;
         cost -= min_width;
+        cost_x -= min_width;
         return cost;
     }
     friend ostream& operator<<(ostream& os, const vec& v) {
@@ -196,11 +204,18 @@ int main() {
     }
     
     double total_cost = 0;
+    int total_cost_x = 0;
+    int total_cost_b = 0;
+    int total_cost_c = 0;
     for(int i = 0; i < pool.size(); i++) {
         cout <<"("<< pool[i] << ") width:" << pool[i].width << " cost:" << pool[i].cost() << endl;
         total_cost += pool[i].cost();
+        total_cost_x += pool[i].cost_x;
+        total_cost_b += pool[i].cost_b;
+        total_cost_c += pool[i].cost_c;
     }
-    cout << "Total cost: " << total_cost << endl;
+    printf("Total cost: %d + %dc + %db.\n", total_cost_x, total_cost_c, total_cost_b);
+    printf("Total cost when c = %f, b = %f: %f\n", c, b, total_cost);
     return 0;
 }
 

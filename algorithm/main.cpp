@@ -6,7 +6,7 @@
 using namespace std;
 
 const double b = 0.1;
-const double  c = 2.0;
+const double  c = 1.0;
 const int w = 8;
 
 struct CSD
@@ -160,14 +160,107 @@ struct vec{
 
 int a[100][100];
 bool IsReplace[30][30][33];
+bool NegReplace[30][30][33];
 int Replace[30][30][33];
 int ShiftReplace[30][30][33];
 CSD csd[100][100];
 CSD csd_matching[100][100];
 vec pool_baseline[100000];
 vec pool[100000];
+vec pool_tmp[100000];
+int current_cost_x, current_cost_c, current_cost_b;
 
-int _string_mathcing(vector<int >& str, int i, int j, int l, int n, int num)
+bool _local_search(int n, int m, int num)
+{
+    // return true;
+    for (int i = 0; i < n; i++) {
+        vector<pair<vec*, pair<int, bool> > > source;
+        for(int j = 0; j < m; j++) {
+            for(int k = 0; k < csd[i][j].len; k++) {
+                if (IsReplace[i][j][k] == true) {
+                    if (Replace[i][j][k] != -1){
+                        source.push_back(make_pair(&pool_tmp[Replace[i][j][k]], \
+                             make_pair(ShiftReplace[i][j][k], NegReplace[i][j][k])));
+                    }
+                    continue;
+                }
+                if (csd[i][j].data[k] == 1) {
+                    source.push_back(make_pair(&pool_baseline[j], make_pair(k, false)));
+                } else if (csd[i][j].data[k] == -1) {
+                    source.push_back(make_pair(&pool_baseline[j], make_pair(k, true)));
+                }
+            }
+        }
+        pool_tmp[num++] = (vec(source));
+    }
+
+    double total_cost = 0;
+    int total_cost_x = 0;
+    int total_cost_b = 0;
+    int total_cost_c = 0;
+    for(int i = 0; i < num; i++) {
+        total_cost += pool_tmp[i].cost();
+        total_cost_x += pool_tmp[i].cost_x;
+        total_cost_b += pool_tmp[i].cost_b;
+        total_cost_c += pool_tmp[i].cost_c;
+    }
+
+    double current_cost1 = (double)current_cost_x + (double)current_cost_c * 1.0 + (double)current_cost_b * b;
+    double current_cost2 = (double)current_cost_x + (double)current_cost_c * 2.0 + (double)current_cost_b * b;
+    double cost1 = (double)total_cost_x + (double)total_cost_c * 1.0 + (double)total_cost_b * b;
+    double cost2 = (double)total_cost_x + (double)total_cost_c * 2.0 + (double)total_cost_b * b;
+
+    if ((cost1 < current_cost1 && cost2 <= current_cost2) || \
+            (cost1 <= current_cost1 && cost2 < current_cost2)){
+                current_cost_x = total_cost_x;
+                current_cost_b = total_cost_b;
+                current_cost_c = total_cost_c;
+                return true;
+            }
+    return false;
+}
+
+void _recover(vector<int >& str, int i, int j, int l, int n)
+{
+    for (int u = i; u < n; ++u) {
+        for (int s = csd[u][j].len - l; s >= 0; --s) {
+            bool IsMatching = true;
+            for (int k = 0; k < l; ++k) {
+                if (str[k] != csd_matching[u][j].data[s+k]) {
+                    IsMatching = false;
+                    break;
+                }
+            }
+            if (IsMatching){
+                for (int k = 0; k < l; ++k) 
+                    if (csd_matching[u][j].data[s+k] != 0) 
+                        IsReplace[u][j][s+k] = false;
+            }
+        }
+    }
+}
+
+void _string_matching_set0(vector<int >& str, int i, int j, int l, int n)
+{
+    for (int u = i; u < n; ++u) {
+        for (int s = csd[u][j].len - l; s >= 0; --s) {
+            bool IsMatching = true;
+            for (int k = 0; k < l; ++k) {
+                if (str[k] != csd_matching[u][j].data[s+k]) {
+                    IsMatching = false;
+                    break;
+                }
+            }
+            if (IsMatching){
+                for (int k = 0; k < l; ++k) 
+                    if (csd_matching[u][j].data[s+k] != 0) 
+                        csd_matching[u][j].data[s+k] = 0;
+            }
+        }
+    }
+}
+
+int _string_matching(vector<int >& str, int i, int j, int l, int n, int num)
 {
     int sum = 0;
     // 尝试匹配
@@ -186,11 +279,42 @@ int _string_mathcing(vector<int >& str, int i, int j, int l, int n, int num)
                 bool Rep = false;
                 for (int k = 0; k < l; ++k) {
                     if (csd_matching[u][j].data[s+k] != 0) {
-                        csd_matching[u][j].data[s+k] = 0;
+                        //csd_matching[u][j].data[s+k] = 0;
                         IsReplace[u][j][s+k] = true;
                         if (Rep == false){
                             Replace[u][j][s+k] = num;
                             ShiftReplace[u][j][s+k] = s;
+                            NegReplace[u][j][s+k] = false;
+                            Rep = true;
+                        }
+                        else {
+                            Replace[u][j][s+k] = -1;
+                            ShiftReplace[u][j][s+k] = -1;
+                        }
+                    }
+                }
+                continue;
+            }
+            
+            // 匹配负数
+            IsMatching = true;
+            for (int k = 0; k < l; ++k) {
+                if (str[k] != -csd_matching[u][j].data[s+k]) {
+                    IsMatching = false;
+                    break;
+                }
+            }
+            if (IsMatching){
+                ++sum;
+                bool Rep = false;
+                for (int k = 0; k < l; ++k) {
+                    if (csd_matching[u][j].data[s+k] != 0) {
+                        //csd_matching[u][j].data[s+k] = 0;
+                        IsReplace[u][j][s+k] = true;
+                        if (Rep == false){
+                            Replace[u][j][s+k] = num;
+                            ShiftReplace[u][j][s+k] = s;
+                            NegReplace[u][j][s+k] = true;
                             Rep = true;
                         }
                         else {
@@ -222,8 +346,7 @@ int string_matching(int n, int m, int l_min = 3, int l_max = 5)
                     for (int k = 0; k < l; ++k)
                         str.push_back(csd_matching[i][j].data[s+k]);
 
-
-                    sum = _string_mathcing(str, i, j, l, n, num);
+                    sum = _string_matching(str, i, j, l, n, num);
 
                     if (sum > 0){
                         source.clear();
@@ -235,7 +358,6 @@ int string_matching(int n, int m, int l_min = 3, int l_max = 5)
                                 } else if (str[k] == -1) {
                                     source.push_back(make_pair(&pool_baseline[j], make_pair(k, true)));
                                 }
-                                csd_matching[i][j].data[s+k] = 0;
                                 IsReplace[i][j][s+k] = true;
                                 if (Rep == false){
                                     Replace[i][j][s+k] = num;
@@ -248,10 +370,17 @@ int string_matching(int n, int m, int l_min = 3, int l_max = 5)
                                 }
                             }
                         }
-                        // 增加加法器
-                        if (Rep) {
-                            pool[num++] = (vec(source));
+                        // 尝试增加加法器
+                        pool_tmp[num++] = (vec(source));
+                        if (_local_search(n, m, num)) {
+                            pool[num - 1] = (vec(source));
+                            _string_matching_set0(str, i, j, l, n);
                         }
+                        else {
+                            _recover(str, i, j, l, n);
+                            num--;
+                        }
+
                     }
                 }
             }
@@ -315,13 +444,19 @@ int main() {
         total_cost_b += pool_baseline[i].cost_b;
         total_cost_c += pool_baseline[i].cost_c;
     }
+
+    current_cost_x = total_cost_x;
+    current_cost_b = total_cost_b;
+    current_cost_c = total_cost_c;
+
     printf("Total cost: %d + %dc + %db.\n", total_cost_x, total_cost_c, total_cost_b);
     printf("Total cost when c = %f, b = %f: %f\n", c, b, total_cost);
     
     printf("\n");
 
     int num = string_matching(n, m, 3, 3);
-    
+
+
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < m; j++)
             cout << csd_matching[i][j] << " ";

@@ -6,7 +6,7 @@
 using namespace std;
 
 const double b = 0.1;
-const double  c = 1.0;
+const double  c = 1.5;
 const int w = 8;
 
 struct CSD
@@ -206,17 +206,25 @@ bool _local_search(int n, int m, int num)
     }
 
     double current_cost1 = (double)current_cost_x + (double)current_cost_c * 1.0 + (double)current_cost_b * b;
-    double current_cost2 = (double)current_cost_x + (double)current_cost_c * 2.0 + (double)current_cost_b * b;
     double cost1 = (double)total_cost_x + (double)total_cost_c * 1.0 + (double)total_cost_b * b;
-    double cost2 = (double)total_cost_x + (double)total_cost_c * 2.0 + (double)total_cost_b * b;
+    // double current_cost2 = (double)current_cost_x + (double)current_cost_c * 2.0 + (double)current_cost_b * b;
+    // double cost2 = (double)total_cost_x + (double)total_cost_c * 2.0 + (double)total_cost_b * b;
 
-    if ((cost1 < current_cost1 && cost2 <= current_cost2) || \
-            (cost1 <= current_cost1 && cost2 < current_cost2)){
-                current_cost_x = total_cost_x;
-                current_cost_b = total_cost_b;
-                current_cost_c = total_cost_c;
-                return true;
-            }
+    // if ((cost1 < current_cost1 && cost2 <= current_cost2) || \
+    //         (cost1 <= current_cost1 && cost2 < current_cost2)){
+    //             current_cost_x = total_cost_x;
+    //             current_cost_b = total_cost_b;
+    //             current_cost_c = total_cost_c;
+    //             return true;
+    //         }
+
+    if (cost1 < current_cost1) {
+        current_cost_x = total_cost_x;
+        current_cost_b = total_cost_b;
+        current_cost_c = total_cost_c;
+        return true;
+    }
+
     return false;
 }
 
@@ -240,21 +248,60 @@ void _recover(vector<int >& str, int i, int j, int l, int n)
     }
 }
 
+bool _Is_matching(vector<int >& str, int l, int u, int j, int s, int sig)
+{
+    for (int k = 0; k < l; ++k) {
+        if (str[k] != sig * csd_matching[u][j].data[s+k]) {
+            return false;
+            break;
+        }
+    }
+    return true;
+}
+
+void _set0(int l, int u, int j, int s)
+{
+    for (int k = 0; k < l; ++k) {
+        if (csd_matching[u][j].data[s+k] != 0) 
+            csd_matching[u][j].data[s+k] = 0;
+    }
+}
+
 void _string_matching_set0(vector<int >& str, int i, int j, int l, int n)
 {
     for (int u = i; u < n; ++u) {
         for (int s = csd[u][j].len - l; s >= 0; --s) {
-            bool IsMatching = true;
-            for (int k = 0; k < l; ++k) {
-                if (str[k] != csd_matching[u][j].data[s+k]) {
-                    IsMatching = false;
-                    break;
-                }
-            }
+            bool IsMatching = _Is_matching(str, l, u, j, s, 1);
             if (IsMatching){
-                for (int k = 0; k < l; ++k) 
-                    if (csd_matching[u][j].data[s+k] != 0) 
-                        csd_matching[u][j].data[s+k] = 0;
+                _set0(l, u, j, s);
+                continue;
+            }
+
+            // 匹配负数
+            IsMatching = _Is_matching(str, l, u, j, s, -1);
+            if (IsMatching){
+                _set0(l, u, j, s);
+            }
+
+        }
+    }
+}
+
+void _modify_matching(int l, int u, int j, int s, int num)
+{
+    bool Rep = false;
+    for (int k = 0; k < l; ++k) {
+        if (csd_matching[u][j].data[s+k] != 0) {
+            IsReplace[u][j][s+k] = true;
+            if (Rep == false){
+                Replace[u][j][s+k] = num;
+                ShiftReplace[u][j][s+k] = s;
+                NegReplace[u][j][s+k] = false;
+                Rep = true;
+            }
+            else {
+                Replace[u][j][s+k] = -1;
+                ShiftReplace[u][j][s+k] = -1;
             }
         }
     }
@@ -267,62 +314,18 @@ int _string_matching(vector<int >& str, int i, int j, int l, int n, int num)
     for (int u = i + 1; u < n; ++u) {
         // 从高位开始匹配
         for (int s = csd[u][j].len - l; s >= 0; --s) {
-            bool IsMatching = true;
-            for (int k = 0; k < l; ++k) {
-                if (str[k] != csd_matching[u][j].data[s+k]) {
-                    IsMatching = false;
-                    break;
-                }
-            }
+            bool IsMatching = _Is_matching(str, l, u, j, s, 1);
             if (IsMatching){
                 ++sum;
-                bool Rep = false;
-                for (int k = 0; k < l; ++k) {
-                    if (csd_matching[u][j].data[s+k] != 0) {
-                        //csd_matching[u][j].data[s+k] = 0;
-                        IsReplace[u][j][s+k] = true;
-                        if (Rep == false){
-                            Replace[u][j][s+k] = num;
-                            ShiftReplace[u][j][s+k] = s;
-                            NegReplace[u][j][s+k] = false;
-                            Rep = true;
-                        }
-                        else {
-                            Replace[u][j][s+k] = -1;
-                            ShiftReplace[u][j][s+k] = -1;
-                        }
-                    }
-                }
+                _modify_matching(l, u, j, s, num);
                 continue;
             }
             
             // 匹配负数
-            IsMatching = true;
-            for (int k = 0; k < l; ++k) {
-                if (str[k] != -csd_matching[u][j].data[s+k]) {
-                    IsMatching = false;
-                    break;
-                }
-            }
+            IsMatching = _Is_matching(str, l, u, j, s, -1);
             if (IsMatching){
+                _modify_matching(l, u, j, s, num);
                 ++sum;
-                bool Rep = false;
-                for (int k = 0; k < l; ++k) {
-                    if (csd_matching[u][j].data[s+k] != 0) {
-                        //csd_matching[u][j].data[s+k] = 0;
-                        IsReplace[u][j][s+k] = true;
-                        if (Rep == false){
-                            Replace[u][j][s+k] = num;
-                            ShiftReplace[u][j][s+k] = s;
-                            NegReplace[u][j][s+k] = true;
-                            Rep = true;
-                        }
-                        else {
-                            Replace[u][j][s+k] = -1;
-                            ShiftReplace[u][j][s+k] = -1;
-                        }
-                    }
-                }
             }
         }
     }
@@ -335,7 +338,7 @@ int string_matching(int n, int m, int l_min = 3, int l_max = 5)
     vector<int >str;
     vector<pair<vec*, pair<int, bool> > > source;
     // 枚举匹配字符串的长度
-    for (int l = l_max; l >= l_min; --l) {
+    for (int l = l_min; l <= l_max; ++l) {
         for (int j = 0; j < m; ++j) {
             for (int i = 0; i < n; ++i) {
                 int sum = 0;
@@ -390,7 +393,7 @@ int string_matching(int n, int m, int l_min = 3, int l_max = 5)
     return num;
 }
 
-int main() {
+int main() {    
     int n, m;
     cin >> n >> m;
     for (int i = 0; i < n; i++) {
@@ -454,7 +457,7 @@ int main() {
     
     printf("\n");
 
-    int num = string_matching(n, m, 3, 3);
+    int num = string_matching(n, m, 3, 5);
 
 
     for (int i = 0; i < n; i++) {

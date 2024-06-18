@@ -3,11 +3,14 @@
 #include <vector>
 #include <cassert>
 #include <cmath>
+#include <random>
+#include <string.h>
 using namespace std;
 
 const double b = 0.1;
 const double  c = 1.5;
 const int w = 8;
+const int ROUND = 1000;
 
 struct CSD
 {
@@ -53,6 +56,16 @@ struct CSD
         for (int i = csd.len - 1; i >= 0; i--)
             os << csd.data[i];
         return os;
+    }
+    CSD& operator=(const CSD& other) {
+        if (this == &other) {
+            return *this;
+        }
+        len = other.len;
+        for (int i = 0; i < len; i++) {
+            data[i] = other.data[i];
+        }
+        return *this;
     }
 };
 
@@ -156,6 +169,19 @@ struct vec{
             c.data.push_back(data[i] - v.data[i]);
         return c;
     }
+    vec& operator=(const vec& other) {
+        if (this == &other) {
+            return *this;
+        }
+        data = other.data;
+        source = other.source;
+        isRoot = other.isRoot;
+        width = other.width;
+        cost_x = other.cost_x;
+        cost_c = other.cost_c;
+        cost_b = other.cost_b;
+        return *this;
+    }
 };
 
 int a[100][100];
@@ -170,8 +196,10 @@ vec pool[100000];
 vec pool_tmp[100000];
 int current_cost_x, current_cost_c, current_cost_b;
 
-bool _local_search(int n, int m, int num)
+bool _local_search(int n, int m, int num, double p, mt19937 &gen)
 {
+    // 检查是否是赚的，若是，则以p的概率返回true
+
     // return true;
     for (int i = 0; i < n; i++) {
         vector<pair<vec*, pair<int, bool> > > source;
@@ -205,8 +233,8 @@ bool _local_search(int n, int m, int num)
         total_cost_c += pool_tmp[i].cost_c;
     }
 
-    double current_cost1 = (double)current_cost_x + (double)current_cost_c * 1.0 + (double)current_cost_b * b;
-    double cost1 = (double)total_cost_x + (double)total_cost_c * 1.0 + (double)total_cost_b * b;
+    double current_cost1 = (double)current_cost_x + (double)current_cost_c * c + (double)current_cost_b * b;
+    double cost1 = (double)total_cost_x + (double)total_cost_c * c + (double)total_cost_b * b;
     // double current_cost2 = (double)current_cost_x + (double)current_cost_c * 2.0 + (double)current_cost_b * b;
     // double cost2 = (double)total_cost_x + (double)total_cost_c * 2.0 + (double)total_cost_b * b;
 
@@ -217,8 +245,9 @@ bool _local_search(int n, int m, int num)
     //             current_cost_c = total_cost_c;
     //             return true;
     //         }
-
-    if (cost1 < current_cost1) {
+    
+    uniform_real_distribution<double> distr(0, 1);
+    if (cost1 < current_cost1 && distr(gen) <= p) {
         current_cost_x = total_cost_x;
         current_cost_b = total_cost_b;
         current_cost_c = total_cost_c;
@@ -248,6 +277,7 @@ void _recover(vector<int >& str, int i, int j, int l, int n)
     }
 }
 
+// 检查csd[u][j]的[s:s+l]在乘上符号后是否与str相同
 bool _Is_matching(vector<int >& str, int l, int u, int j, int s, int sig)
 {
     for (int k = 0; k < l; ++k) {
@@ -332,11 +362,16 @@ int _string_matching(vector<int >& str, int i, int j, int l, int n, int num)
     return sum;
 }
 
-int string_matching(int n, int m, int l_min = 3, int l_max = 5)
+int string_matching(int n, int m, int l_min = 3, int l_max = 5, double p = 1.0)
 {
     int num = 0;
     vector<int >str;
     vector<pair<vec*, pair<int, bool> > > source;
+
+    // 随机数生成
+    random_device rd;
+    mt19937 gen(rd());
+
     // 枚举匹配字符串的长度
     for (int l = l_min; l <= l_max; ++l) {
         for (int j = 0; j < m; ++j) {
@@ -375,7 +410,7 @@ int string_matching(int n, int m, int l_min = 3, int l_max = 5)
                         }
                         // 尝试增加加法器
                         pool_tmp[num++] = (vec(source));
-                        if (_local_search(n, m, num)) {
+                        if (_local_search(n, m, num, p, gen)) {
                             pool[num - 1] = (vec(source));
                             _string_matching_set0(str, i, j, l, n);
                         }
@@ -407,8 +442,6 @@ int main() {
             l = max(l, 1);
             csd[i][j].len = l;
             csd[i][j].INT2CSD(a[i][j]);
-            csd_matching[i][j].len = l;
-            csd_matching[i][j].INT2CSD(a[i][j]);
         }
     }
 
@@ -447,60 +480,95 @@ int main() {
         total_cost_b += pool_baseline[i].cost_b;
         total_cost_c += pool_baseline[i].cost_c;
     }
-
-    current_cost_x = total_cost_x;
-    current_cost_b = total_cost_b;
-    current_cost_c = total_cost_c;
+    int base_cost_x = total_cost_x;
+    int base_cost_b = total_cost_b;
+    int base_cost_c = total_cost_c;
+    double base_cost = total_cost;
+    double no_random_cost;
 
     printf("Total cost: %d + %dc + %db.\n", total_cost_x, total_cost_c, total_cost_b);
     printf("Total cost when c = %f, b = %f: %f\n", c, b, total_cost);
     
     printf("\n");
 
-    int num = string_matching(n, m, 3, 5);
+    double best_cost = -1;
+    int num = 0;
 
+    for (double p = 1.0; p >= 0.0; p -= 1.0/ROUND) {
+        current_cost_x = base_cost_x;
+        current_cost_b = base_cost_b;
+        current_cost_c = base_cost_c;
 
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < m; j++)
-            cout << csd_matching[i][j] << " ";
-        cout << endl;
-    }
-
-    for (int i = 0; i < n; i++) {
-        vector<pair<vec*, pair<int, bool> > > source;
-        for(int j = 0; j < m; j++) {
-            for(int k = 0; k < csd[i][j].len; k++) {
-                if (IsReplace[i][j][k] == true) {
-                    if (Replace[i][j][k] != -1){
-                        source.push_back(make_pair(&pool[Replace[i][j][k]], make_pair(ShiftReplace[i][j][k], false)));
-                    }
-                    continue;
-                }
-
-                if (csd[i][j].data[k] == 1) {
-                    source.push_back(make_pair(&pool_baseline[j], make_pair(k, false)));
-                } else if (csd[i][j].data[k] == -1) {
-                    source.push_back(make_pair(&pool_baseline[j], make_pair(k, true)));
-                }
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < m; j++) {
+                csd_matching[i][j] = csd[i][j];
             }
         }
-        pool[num++] = (vec(source));
-    }
+                    
 
-    total_cost = 0;
-    total_cost_x = 0;
-    total_cost_b = 0;
-    total_cost_c = 0;
-    for(int i = 0; i < num; i++) {
-        cout <<"("<< pool[i] << ") width:" << pool[i].width << " cost:" << pool[i].cost() << endl;
-        total_cost += pool[i].cost();
-        total_cost_x += pool[i].cost_x;
-        total_cost_b += pool[i].cost_b;
-        total_cost_c += pool[i].cost_c;
-    }
-    printf("Total cost: %d + %dc + %db.\n", total_cost_x, total_cost_c, total_cost_b);
-    printf("Total cost when c = %f, b = %f: %f\n", c, b, total_cost);
+        int num = string_matching(n, m, 3, 5, p);
 
+        for (int i = 0; i < n; i++) {
+            vector<pair<vec*, pair<int, bool> > > source;
+            for(int j = 0; j < m; j++) {
+                for(int k = 0; k < csd[i][j].len; k++) {
+                    if (IsReplace[i][j][k] == true) {
+                        if (Replace[i][j][k] != -1){
+                            source.push_back(make_pair(&pool[Replace[i][j][k]], make_pair(ShiftReplace[i][j][k], false)));
+                        }
+                        continue;
+                    }
+
+                    if (csd[i][j].data[k] == 1) {
+                        source.push_back(make_pair(&pool_baseline[j], make_pair(k, false)));
+                    } else if (csd[i][j].data[k] == -1) {
+                        source.push_back(make_pair(&pool_baseline[j], make_pair(k, true)));
+                    }
+                }
+            }
+            pool[num++] = (vec(source));
+        }
+
+        total_cost = 0;
+        total_cost_x = 0;
+        total_cost_b = 0;
+        total_cost_c = 0;
+        for(int i = 0; i < num; i++) {
+            total_cost += pool[i].cost();
+            total_cost_x += pool[i].cost_x;
+            total_cost_b += pool[i].cost_b;
+            total_cost_c += pool[i].cost_c;
+        }
+        // printf("Total cost: %d + %dc + %db.\n", total_cost_x, total_cost_c, total_cost_b);
+        // printf("Total cost when c = %f, b = %f: %f\n", c, b, total_cost);
+
+        if (best_cost == -1 || total_cost < best_cost) {
+            if (best_cost == -1) no_random_cost = total_cost;
+            best_cost = total_cost;
+
+            for (int i = 0; i < n; i++) {
+                for (int j = 0; j < m; j++)
+                    cout << csd_matching[i][j] << " ";
+                cout << endl;
+            }
+            total_cost = 0;
+            total_cost_x = 0;
+            total_cost_b = 0;
+            total_cost_c = 0;
+            for(int i = 0; i < num; i++) {
+                cout <<"("<< pool[i] << ") width:" << pool[i].width << " cost:" << pool[i].cost() << endl;
+                total_cost += pool[i].cost();
+                total_cost_x += pool[i].cost_x;
+                total_cost_b += pool[i].cost_b;
+                total_cost_c += pool[i].cost_c;
+            }
+            printf("Total cost: %d + %dc + %db.\n", total_cost_x, total_cost_c, total_cost_b);
+            printf("Total cost when c = %f, b = %f: %f\n", c, b, total_cost);
+        }
+    }
+    cout<< "Best cost: " << best_cost << endl;
+    cout<< "No random cost: " << no_random_cost << endl;
+    cout<< "Baseline cost: " << base_cost << endl;
     return 0;
 }
 

@@ -247,7 +247,8 @@ bool _local_search(int n, int m, int num, double p, mt19937 &gen)
     //         }
     
     uniform_real_distribution<double> distr(0, 1);
-    if (cost1 < current_cost1 && distr(gen) <= p) {
+    if ((cost1 < current_cost1 && distr(gen) <= p) ||
+        (cost1 >= current_cost1 && distr(gen) > p)){
         current_cost_x = total_cost_x;
         current_cost_b = total_cost_b;
         current_cost_c = total_cost_c;

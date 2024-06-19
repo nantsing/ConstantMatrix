@@ -198,7 +198,7 @@ int current_cost_x, current_cost_c, current_cost_b;
 
 bool _local_search(int n, int m, int num, double p, mt19937 &gen)
 {
-    // 检查是否是赚的，若是，则以p的概率返回true
+    // 检查是否是赚的，若是，则以p的概率返回true，否则以1-p的概率返回true
 
     // return true;
     for (int i = 0; i < n; i++) {
@@ -380,7 +380,14 @@ int string_matching(int n, int m, int l_min = 3, int l_max = 5, double p = 1.0)
     mt19937 gen(rd());
 
     // 枚举匹配字符串的长度
+    vector<int> l_list;
     for (int l = l_min; l <= l_max; ++l) {
+        l_list.push_back(l);
+    }
+    if (p < 1.0 - 1e-6) {
+        shuffle(l_list.begin(), l_list.end(), gen);
+    }
+    for (int l : l_list) {
         for (int j = 0; j < m; ++j) {
             for (int i = 0; i < n; ++i) {
                 int sum = 0;
@@ -531,7 +538,7 @@ int main() {
         memset(pool, 0, sizeof(pool));
         memset(pool_tmp, 0, sizeof(pool_tmp));
                     
-        int num = string_matching(n, m, 3, 5, p);
+        int num = string_matching(n, m, 3, 10, p);
 
         for (int i = 0; i < n; i++) {
             vector<pair<vec*, pair<int, bool> > > source;

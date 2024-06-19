@@ -7,8 +7,8 @@
 #include <string.h>
 using namespace std;
 
-const double b = 0.1;
-const double  c = 1.5;
+const double b = 0.0;
+const double  c = 1.2;
 const int w = 8;
 const int ROUND = 1000;
 
@@ -258,26 +258,6 @@ bool _local_search(int n, int m, int num, double p, mt19937 &gen)
     return false;
 }
 
-void _recover(vector<int >& str, int i, int j, int l, int n)
-{
-    for (int u = i; u < n; ++u) {
-        for (int s = csd[u][j].len - l; s >= 0; --s) {
-            bool IsMatching = true;
-            for (int k = 0; k < l; ++k) {
-                if (str[k] != csd_matching[u][j].data[s+k]) {
-                    IsMatching = false;
-                    break;
-                }
-            }
-            if (IsMatching){
-                for (int k = 0; k < l; ++k) 
-                    if (csd_matching[u][j].data[s+k] != 0) 
-                        IsReplace[u][j][s+k] = false;
-            }
-        }
-    }
-}
-
 // 检查csd[u][j]的[s:s+l]在乘上符号后是否与str相同
 bool _Is_matching(vector<int >& str, int l, int u, int j, int s, int sig)
 {
@@ -288,6 +268,30 @@ bool _Is_matching(vector<int >& str, int l, int u, int j, int s, int sig)
         }
     }
     return true;
+}
+
+void _recover(vector<int >& str, int i, int j, int l, int n)
+{
+    for (int u = i; u < n; ++u) {
+        for (int s = csd[u][j].len - l; s >= 0; --s) {
+            bool IsMatching = _Is_matching(str, l, u, j, s, 1);
+            if (IsMatching){
+                for (int k = 0; k < l; ++k) 
+                    if (csd_matching[u][j].data[s+k] != 0) 
+                        IsReplace[u][j][s+k] = false;
+            continue;
+            }
+            
+            IsMatching = _Is_matching(str, l, u, j, s, -1);
+            if (IsMatching){
+                for (int k = 0; k < l; ++k) 
+                    if (csd_matching[u][j].data[s+k] != 0) 
+                        IsReplace[u][j][s+k] = false;
+            }
+
+        }
+    }
+
 }
 
 void _set0(int l, int u, int j, int s)
@@ -318,7 +322,7 @@ void _string_matching_set0(vector<int >& str, int i, int j, int l, int n)
     }
 }
 
-void _modify_matching(int l, int u, int j, int s, int num)
+void _modify_matching(int l, int u, int j, int s, int num, bool neg)
 {
     bool Rep = false;
     for (int k = 0; k < l; ++k) {
@@ -327,7 +331,7 @@ void _modify_matching(int l, int u, int j, int s, int num)
             if (Rep == false){
                 Replace[u][j][s+k] = num;
                 ShiftReplace[u][j][s+k] = s;
-                NegReplace[u][j][s+k] = false;
+                NegReplace[u][j][s+k] = neg;
                 Rep = true;
             }
             else {
@@ -348,14 +352,16 @@ int _string_matching(vector<int >& str, int i, int j, int l, int n, int num)
             bool IsMatching = _Is_matching(str, l, u, j, s, 1);
             if (IsMatching){
                 ++sum;
-                _modify_matching(l, u, j, s, num);
+                _modify_matching(l, u, j, s, num, false);
+                s = s - l;
                 continue;
             }
             
             // 匹配负数
             IsMatching = _Is_matching(str, l, u, j, s, -1);
             if (IsMatching){
-                _modify_matching(l, u, j, s, num);
+                _modify_matching(l, u, j, s, num, true);
+                s = s - l;
                 ++sum;
             }
         }
@@ -520,8 +526,11 @@ int main() {
                 csd_matching[i][j] = csd[i][j];
             }
         }
-                    
 
+        memset(IsReplace, 0, sizeof(IsReplace));
+        memset(pool, 0, sizeof(pool));
+        memset(pool_tmp, 0, sizeof(pool_tmp));
+                    
         int num = string_matching(n, m, 3, 5, p);
 
         for (int i = 0; i < n; i++) {
@@ -530,7 +539,7 @@ int main() {
                 for(int k = 0; k < csd[i][j].len; k++) {
                     if (IsReplace[i][j][k] == true) {
                         if (Replace[i][j][k] != -1){
-                            source.push_back(make_pair(&pool[Replace[i][j][k]], make_pair(ShiftReplace[i][j][k], false)));
+                            source.push_back(make_pair(&pool[Replace[i][j][k]], make_pair(ShiftReplace[i][j][k], NegReplace[i][j][k])));
                         }
                         continue;
                     }

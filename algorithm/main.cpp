@@ -433,8 +433,13 @@ int main() {
     int n, m;
     cin >> n >> m;
     for (int i = 0; i < n; i++) {
-        for (int j = 0; j < m; j++)
+        for (int j = 0; j < m; j++){
             cin >> a[i][j];
+            // 由于位移没有代价，所以可以先预处理
+            while (a[i][j] % 2 == 0 && a[i][j] != 0) {
+                a[i][j] /= 2;
+            }
+        }
     }
     
     for (int i = 0; i < n; i++) {
@@ -445,6 +450,16 @@ int main() {
             csd[i][j].INT2CSD(a[i][j]);
         }
     }
+
+    cout << "translated goal:" << endl;
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < m; j++){
+            cout << a[i][j] << " ";
+        }
+        cout << endl;
+    }
+
+    cout << "CSD representation:" <<endl;
 
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < m; j++)

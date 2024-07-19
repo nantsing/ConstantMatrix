@@ -448,8 +448,18 @@ int main() {
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < m; j++){
             cin >> a[i][j];
-            // 由于位移没有代价，所以可以先预处理
-            while (a[i][j] % 2 == 0 && a[i][j] != 0) {
+        }
+        // 由于位移没有代价，所以可以把公用的末尾0去掉
+        while(1) {
+            bool flag = true;
+            for (int j = 0; j < m; j++) {
+                if (a[i][j] % 2 != 0 || a[i][j] == 0) {
+                    flag = false;
+                    break;
+                }
+            }
+            if(!flag) break;
+            for (int j = 0; j < m; j++) {
                 a[i][j] /= 2;
             }
         }

@@ -452,13 +452,17 @@ int main() {
         // 由于位移没有代价，所以可以把公用的末尾0去掉
         while(1) {
             bool flag = true;
+            bool no_zero = true;
             for (int j = 0; j < m; j++) {
-                if (a[i][j] % 2 != 0 || a[i][j] == 0) {
+                if (a[i][j] != 0) {
+                    no_zero = false;
+                }
+                if (a[i][j] % 2 != 0) {
                     flag = false;
                     break;
                 }
             }
-            if(!flag) break;
+            if(!flag || no_zero) break;
             for (int j = 0; j < m; j++) {
                 a[i][j] /= 2;
             }

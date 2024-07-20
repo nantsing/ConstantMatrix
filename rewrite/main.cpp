@@ -37,7 +37,7 @@ class CSD {
             bits[len++] = x & 1;
             x >>= 1;
         }
-        for (int i = 0; i < len - 1; i++) {
+        for (int i = 0; i < (int)len - 1; i++) {
             if (bits[i] == 1 && bits[i + 1] == 1) {
                 bits[i] = -1;
                 bits[i + 1] = 0;
@@ -45,13 +45,14 @@ class CSD {
                 if (i == len - 2)
                     len++;
             }
-            int k = i + 2;
+            uint k = i + 2;
             if (k >= len) continue;
             while (bits[k] == 2) {
                 bits[k] = 0;
                 bits[k + 1] += 1;
                 k++;
             }
+            len = std::max(len, k + 1);
         }
         if (neg) {
             for (int i = 0; i < len; i++) {
@@ -278,6 +279,7 @@ class Circuit {
     void naive_connect(std::shared_ptr<Adder<width> >& cur, int coefficient[]) {
         for (int i = 0; i < m; i++) {
             cur->data[i] = CSD<width>(coefficient[i]);
+            std::cout << cur->data[i] << " ";
             for (int j = 0; j < cur->data[i].len; j++) {
                  if (cur->data[i].bits[j] == 1) {
                     cur->srcid[i][j] = count++;
@@ -290,7 +292,29 @@ class Circuit {
                 }
             }
         }
+        std::cout << std::endl;
         cur->update_width();
+    }
+
+    void print_test_info() {
+        for (int i = 0; i < m; i++) {
+            std::cout << "input " << i << " : ";
+            for (int j = 0; j < m; j++) {
+                std::cout << input[i]->data[j].num << " ";
+            }
+            std::cout << " width:" << input[i]->bit_width << " cost:" << input[i]->cost().sum() << std::endl;
+        }
+        for (int i = 0; i < n; i++) {
+            std::cout << "output " << i << " : ";
+            for (int j = 0; j < m; j++) {
+                std::cout << output[i]->data[j].num << " ";
+            }
+            std::cout << " width:" << output[i]->bit_width << " cost:" << output[i]->cost().sum() << std::endl;
+            // for (auto it = output[i]->src.begin(); it != output[i]->src.end(); it++) {
+            //     auto t = it->second;
+            //     std::cout << "src " << it->first << " : " << " " << t.second.first << " " << t.second.second << std::endl;
+            // }
+        }
     }
 };
 
@@ -306,13 +330,17 @@ int main() {
         // 由于位移没有代价，所以可以把公用的末尾0去掉
         while(1) {
             bool flag = true;
+            bool no_zero = true;
             for (int j = 0; j < m; j++) {
-                if (matrix[i * m + j] % 2 != 0 || matrix[i * m + j] == 0) {
+                if (matrix[i * m + j] != 0) {
+                    no_zero = false;
+                }
+                if (matrix[i * m + j] % 2 != 0) {
                     flag = false;
                     break;
                 }
             }
-            if(!flag) break;
+            if(!flag || no_zero) break;
             for (int j = 0; j < m; j++) {
                 matrix[i * m + j] /= 2;
             }
@@ -329,6 +357,8 @@ int main() {
 
     Circuit<w> circuit(n, m, matrix);
 
+    
+    circuit.print_test_info();
     Cost cost = circuit.cost();
     std::cout << cost.sum() << std::endl;
 

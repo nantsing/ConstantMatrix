@@ -7,8 +7,6 @@
 template <uint width>
 class Circuit {
     public:
-    unsigned long long count = 0; // counter for unique src/dst id
-
     uint n, m; // n-rows m-cols
     std::vector<std::shared_ptr<Adder<width> > > input;
     std::vector<std::shared_ptr<Adder<width> > > output;
@@ -30,10 +28,10 @@ Circuit<width>::Circuit(uint n, uint m, int* matrix) : n(n), m(m) {
     output.resize(n);
     layers.resize(0);
     for (int i = 0; i < m; i++) {
-        input[i] = std::make_shared<Adder<width> >(i, m);
+        input[i] = std::make_shared<Adder<width> >(i, m, i, 0xffffffff);
     }
     for (int i = 0; i < n; i++, matrix += m) {
-        output[i] = std::make_shared<Adder<width> >(m);
+        output[i] = std::make_shared<Adder<width> >(m, i, 0);
         naive_connect(output[i], matrix);
     }
 }
@@ -61,14 +59,16 @@ void Circuit<width>::naive_connect(std::shared_ptr<Adder<width> >& cur, int coef
         cur->data[i] = CSD<width>(coefficient[i]);
         std::cout << cur->data[i] << " ";
         for (int j = 0; j < cur->data[i].len; j++) {
+            Index dst_info(cur->layerid, cur->nodeid, j);
+            // std::cout << dst_info.node << " " << dst_info.bitshift << " " << dst_info.layer << " " << std::endl;
              if (cur->data[i].bits[j] == 1) {
-                cur->srcid[i][j] = count++;
+                cur->srcid[i][j] = cur->counter++;
                 cur->src[cur->srcid[i][j]] = std::make_pair(input[i], std::make_pair(j, false));
-                input[i]->dst[count] = std::make_pair(cur, std::make_pair(j, false));
+                input[i]->dst[dst_info] = std::make_pair(cur, std::make_pair(j, false));
             } else if (cur->data[i].bits[j] == -1) {
-                cur->srcid[i][j] = count++;
+                cur->srcid[i][j] = cur->counter++;
                 cur->src[cur->srcid[i][j]] = std::make_pair(input[i], std::make_pair(j, true));
-                input[i]->dst[count] = std::make_pair(cur, std::make_pair(j, true));
+                input[i]->dst[dst_info] = std::make_pair(cur, std::make_pair(j, true));
             }
         }
     }

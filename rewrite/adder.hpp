@@ -4,7 +4,7 @@ extern const double B, C;
 #include "csd.hpp"
 #include <vector>
 #include <memory>
-#include <unordered_map>
+#include <map>
 
 class Cost {
     public:
@@ -42,17 +42,30 @@ class Cost {
     }
 };
 
+class Index {
+    public:
+    int layer, node, bitshift;
+    Index(int layer, int node, int bit) : layer(layer), node(node), bitshift(bit) {}
+    Index() : layer(0), node(0), bitshift(0) {}
+    bool operator < (const Index& other) const {
+        if (layer != other.layer) return layer < other.layer;
+        if (node != other.node) return node < other.node;
+        return bitshift < other.bitshift;
+    }
+};
+
 template <uint width>
 class Adder : public std::enable_shared_from_this< Adder<width> > {
     public:
-
+    uint counter = 0;
+    uint nodeid, layerid; // the id of the node in the layer
     uint elements, bit_width;
     std::vector< CSD<width> > data; // total [$elements] of elements
     uint** srcid; // srcid[i][j] = the unique id of the src of the j-th bit of the i-th element
     bool** hasUpdate; // hasUpdate[i][j] = whether the j-th bit of the i-th element has been updated
     
-    std::unordered_map<unsigned long long, std::pair< std::shared_ptr<Adder>, std::pair<int, bool> > > src;
-    std::unordered_map<unsigned long long, std::pair< std::shared_ptr<Adder>, std::pair<int, bool> > > dst;
+    std::map<uint , std::pair< std::shared_ptr<Adder>, std::pair<int, bool> > > src;
+    std::map<Index, std::pair< std::shared_ptr<Adder>, std::pair<int, bool> > > dst;
     bool isRoot;
 
     // alloc mem for srcid and hasUpdate
@@ -70,13 +83,13 @@ class Adder : public std::enable_shared_from_this< Adder<width> > {
     }
 
     // empty adder
-    Adder(uint elements): isRoot(false), elements(elements), bit_width(width) {
+    Adder(uint elements, uint nodeid, uint layerid): isRoot(false), elements(elements), bit_width(width), nodeid(nodeid), layerid(layerid) {
         alloc_mem();
         data.resize(elements);
     }
 
     // root elements
-    Adder(int k, uint elements) : isRoot(true), elements(k), bit_width(width) {
+    Adder(int k, uint elements, uint nodeid, uint layerid) : isRoot(true), elements(elements), bit_width(width), nodeid(nodeid), layerid(layerid) {
         alloc_mem();
         data.resize(elements);
         data[k] = CSD<width>(1);

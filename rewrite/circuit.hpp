@@ -33,7 +33,29 @@ class Circuit {
     void col_wise_optimization(int l_min = 3, int l_max = 5, int layer = 0); // optimize the circuit in row-wise
 
     void print_test_info(); // print the test info
+
+    void print_csd_form(); // print the csd form of the circuit
 };
+
+template <uint width>
+void Circuit<width>::print_csd_form() {
+    for (int i = 0; i < m; i++) {
+        std::cout << "input " << i << " : ";
+        for (int j = 0; j < m; j++) {
+            std::cout << input[i]->data[j] << "\t";
+        }
+        std::cout << std::endl;
+    }
+    for (int i = layers.size() - 1; i >= 0; i--) {
+        for (int j = 0; j < layers[i].size(); j++) {
+            std::cout << "layer " << i << " node " << j << " : ";
+            for (int k = 0; k < m; k++) {
+                std::cout << layers[i][j]->data[k] << "\t";
+            }
+            std::cout << std::endl;
+        }
+    }
+}
 
 template <uint width>
 Circuit<width>::Circuit(uint n, uint m, int* matrix, double p) : n(n), m(m), p(p) {

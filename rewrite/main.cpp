@@ -50,7 +50,7 @@ int main() {
 
     Circuit<w> circuit(n, m, matrix);
 
-    
+    circuit.print_csd_form();
     circuit.print_test_info();
     Cost best_cost = circuit.cost();
     std::cout << best_cost.sum() << std::endl;
@@ -62,6 +62,7 @@ int main() {
         Cost cost = new_circuit.cost();
         if (cost < best_cost) {
             best_cost = cost;
+            new_circuit.print_csd_form();
             new_circuit.print_test_info();
             std::cout << best_cost.sum() << std::endl;
         }

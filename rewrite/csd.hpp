@@ -21,6 +21,10 @@ class CSD {
     CSD get_sub(int l, int r); // get the sub word from [l, r)
 
     friend std::ostream& operator<<(std::ostream& os, const CSD& num) {
+        if (num.len == 0) {
+            os << 0;
+            return os;
+        }
         for (int i = num.len - 1; i >= 0; i--)
             os << num.bits[i];
         return os;

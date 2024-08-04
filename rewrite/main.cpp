@@ -57,6 +57,7 @@ int main() {
 
     for (double p = 1.0; p >= 0.0; p -= 1.0 / ROUND) {
         Circuit<w> new_circuit(circuit);
+        new_circuit.p = p;
         new_circuit.col_wise_optimization(3, 10);
         Cost cost = new_circuit.cost();
         if (cost < best_cost) {

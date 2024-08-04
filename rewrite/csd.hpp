@@ -4,11 +4,12 @@
 
 typedef unsigned int uint;
 
+#define EXTRA_BITS 5
 
 template <uint width>
 class CSD {
     public:
-    int bits[width + 5]; // the CSD number
+    int bits[width + EXTRA_BITS]; // the CSD number
     uint len; // the length of the CSD number
     int num; // the integer value of the CSD number
     CSD(); // all zero initialization
@@ -28,7 +29,7 @@ class CSD {
 
 template <uint width>
 CSD<width>::CSD() {
-    for (int i = 0; i < width + 5; i++) {
+    for (int i = 0; i < width + EXTRA_BITS; i++) {
         bits[i] = 0;
     }
     len = 0;

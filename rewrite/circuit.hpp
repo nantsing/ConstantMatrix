@@ -3,36 +3,49 @@
 #include <vector>
 #include <memory>
 #include <unordered_map>
+#include <random>
+#include <cassert>
+#include <algorithm>
 
 template <uint width>
 class Circuit {
+    // return : {nodeid, {shift, neg}}
+    std::vector< std::pair<int, std::pair<int, bool> > > _sub_num_match(CSD<width> goal, int layer, int col);
+
+    bool _check_update_nice(CSD<width> goal, int layer, int col, std::vector< std::pair<int, std::pair<int, bool> > >& match, int new_node_id); 
+
     public:
+    std::mt19937 gen;
     uint n, m; // n-rows m-cols
+    double p; // probability factor
     std::vector<std::shared_ptr<Adder<width> > > input;
-    std::vector<std::shared_ptr<Adder<width> > > output;
     std::vector< std::vector< std::shared_ptr<Adder<width> > > > layers;
 
-    Circuit(uint n, uint m, int* matrix); // constructor
+    Circuit(uint n, uint m, int* matrix, double p = 1.0); // constructor
 
     Cost cost(); // return the total cost of the circuit
     
     // the starting connection of the adder
-    void naive_connect(std::shared_ptr<Adder<width> >& cur, int coefficient[]);
+    void naive_connect(std::shared_ptr<Adder<width> >& cur, int coefficient[], bool print_csd = false);
+
+    void col_wise_optimization(int l_min = 3, int l_max = 5, int layer = 0); // optimize the circuit in row-wise
 
     void print_test_info(); // print the test info
 };
 
 template <uint width>
-Circuit<width>::Circuit(uint n, uint m, int* matrix) : n(n), m(m) {
+Circuit<width>::Circuit(uint n, uint m, int* matrix, double p) : n(n), m(m), p(p) {
+    std::random_device rd;
+    gen = std::mt19937(rd());
     input.resize(m);
-    output.resize(n);
-    layers.resize(0);
+    layers.resize(1);
+    layers[0].resize(n);
     for (int i = 0; i < m; i++) {
         input[i] = std::make_shared<Adder<width> >(i, m, i, 0xffffffff);
     }
     for (int i = 0; i < n; i++, matrix += m) {
-        output[i] = std::make_shared<Adder<width> >(m, i, 0);
-        naive_connect(output[i], matrix);
+        layers[0][i] = std::make_shared<Adder<width> >(m, i, 0);
+        naive_connect(layers[0][i], matrix, true);
     }
 }
 
@@ -47,17 +60,14 @@ Cost Circuit<width>::cost() {
             ret += layers[i][j]->cost();
         }
     }
-    for (int i = 0; i < n; i++) {
-        ret += output[i]->cost();
-    }
     return ret;
 }
 
 template <uint width>
-void Circuit<width>::naive_connect(std::shared_ptr<Adder<width> >& cur, int coefficient[]) {
+void Circuit<width>::naive_connect(std::shared_ptr<Adder<width> >& cur, int coefficient[], bool print_csd) {
     for (int i = 0; i < m; i++) {
         cur->data[i] = CSD<width>(coefficient[i]);
-        std::cout << cur->data[i] << " ";
+        if (print_csd) std::cout << cur->data[i] << " ";
         for (int j = 0; j < cur->data[i].len; j++) {
             Index dst_info(cur->layerid, cur->nodeid, j);
             // std::cout << dst_info.node << " " << dst_info.bitshift << " " << dst_info.layer << " " << std::endl;
@@ -72,7 +82,7 @@ void Circuit<width>::naive_connect(std::shared_ptr<Adder<width> >& cur, int coef
             }
         }
     }
-    std::cout << std::endl;
+    if (print_csd) std::cout << std::endl;
     cur->update_width();
 }
 
@@ -85,11 +95,134 @@ void Circuit<width>::print_test_info() {
         }
         std::cout << " width:" << input[i]->bit_width << " cost:" << input[i]->cost().sum() << std::endl;
     }
-    for (int i = 0; i < n; i++) {
-        std::cout << "output " << i << " : ";
-        for (int j = 0; j < m; j++) {
-            std::cout << output[i]->data[j].num << " ";
+    for (int i = layers.size() - 1; i >= 0; i--) {
+        for (int j = 0; j < layers[i].size(); j++) {
+            std::cout << "layer " << i << " node " << j << " : ";
+            for (int k = 0; k < m; k++) {
+                std::cout << layers[i][j]->data[k].num << " ";
+            }
+            std::cout << " width:" << layers[i][j]->bit_width << " cost:" << layers[i][j]->cost().sum() << std::endl;
         }
-        std::cout << " width:" << output[i]->bit_width << " cost:" << output[i]->cost().sum() << std::endl;
     }
+}
+
+template <uint width>
+void Circuit<width>::col_wise_optimization(int l_min, int l_max, int layer) {
+    // 现在只能处理最靠近输入的一层
+    assert(layer + 1 == layers.size());
+    
+    layers.resize(layer + 2);
+    
+    // 枚举匹配字符串的长度
+    std::vector<int> l_list;
+    for (int l = l_min; l <= l_max; ++l) {
+        l_list.push_back(l);
+    }
+    if (p < 1.0 - 1e-6) {
+        std::shuffle(l_list.begin(), l_list.end(), gen);
+    }
+
+    for (int l : l_list) {
+        for (int j = 0; j < m; ++j) {
+            for (int i = 0; i < layers[layer].size(); i++) {
+                // 枚举字符串起点
+                for (int s = layers[layer][i]->data[j].len - l; s >= 0; s--) {
+                    int e = s + l;
+                    assert(e <= layers[layer][i]->data[j].len);
+                    if (layers[layer][i]->data[j].bits[s] == 0 || layers[layer][i]->data[j].bits[e - 1] == 0) continue;
+                    if (!layers[layer][i]->check_unupdated(j, s, e)) continue;
+                    auto sub_num = layers[layer][i]->data[j].get_sub(s, e);
+                    auto match = _sub_num_match(sub_num, layer, j);
+                    assert(match.size() > 0);
+                    if (match.size() == 1) continue;
+                    _check_update_nice(sub_num, layer, j, match, layers[layer + 1].size());
+                }
+            }
+        }
+    }
+}
+
+template <uint width>
+std::vector< std::pair<int, std::pair<int, bool> > > Circuit<width>::_sub_num_match(CSD<width> goal, int layer, int col) {
+    std::vector< std::pair<int, std::pair<int, bool> > > ret;
+    for (int i = 0; i < layers[layer].size(); i++) {
+        for (int s = layers[layer][i]->data[col].len - goal.len; s >= 0; s--) {
+            int e = s + goal.len;
+            assert(e <= layers[layer][i]->data[col].len);
+            if (!layers[layer][i]->check_unupdated(col, s, e)) continue;
+            auto sub_num = layers[layer][i]->data[col].get_sub(s, e);
+            if (sub_num == goal) {
+                ret.push_back(std::make_pair(i, std::make_pair(s, false)));
+                s -= goal.len - 1;
+            } else if (-sub_num == goal) {
+                ret.push_back(std::make_pair(i, std::make_pair(s, true)));
+                s -= goal.len - 1;
+            }
+        }
+    }
+    return ret;
+}
+
+template <uint width>
+bool Circuit<width>::_check_update_nice(CSD<width> goal, int layer, int col, std::vector< std::pair<int, std::pair<int, bool> > >& match, int new_node_id) {
+    std::shared_ptr< Adder<width> > new_node = std::make_shared<Adder<width> >(m, new_node_id, layer + 1);
+    int co[m];
+    for (int i = 0; i < m; i++) {
+        co[i] = 0;
+    }
+    co[col] = goal.num;
+    naive_connect(new_node, co);
+    
+    Cost old_cost;
+    int last = -1;
+    Cost new_cost = new_node->cost();
+    std::shared_ptr< Adder<width> > cur;
+    for (auto& m : match) {
+        if (m.first != last) {
+            if (last != -1) {
+                new_cost += cur->cost();
+                old_cost += layers[layer][last]->cost();
+            }
+            cur = std::make_shared< Adder<width> >(*layers[layer][m.first]);
+        }
+        last = m.first;
+        int id = cur->counter++;
+        cur->src[id] = std::make_pair(new_node, m.second);
+        for (int i = m.second.first; i < m.second.first + goal.len; i++) {
+            cur->hasUpdate[col][i] = true;
+            if (cur->srcid[col][i] != -1) {
+                cur->src.erase(cur->srcid[col][i]);
+            }
+            cur->srcid[col][i] = id;
+        }
+    }
+    new_cost += cur->cost();
+    old_cost += layers[layer][last]->cost();
+
+    std::uniform_real_distribution<double> distr(0, 1);
+
+    if ((new_cost.sum() < old_cost.sum() && distr(gen) <= p) || 
+        (new_cost.sum() >= old_cost.sum() && distr(gen) < 1 - p)) {
+        for (auto& m : match) {
+            auto cur = layers[layer][m.first];
+            int new_id = cur->counter++;
+            for (int i = m.second.first; i < m.second.first + goal.len; i++) {
+                cur->hasUpdate[col][i] = true;
+                if (cur->srcid[col][i] != -1) {
+                    Index idx(cur->layerid, cur->nodeid, i);
+                    if (cur->src.find(cur->srcid[col][i]) != cur->src.end()) {
+                        cur->src[cur->srcid[col][i]].first->dst.erase(idx);
+                        cur->src.erase(cur->srcid[col][i]);
+                    }
+                }
+                cur->srcid[col][i] = new_id;
+            }
+            cur->src[new_id] = std::make_pair(new_node, m.second);
+            new_node->dst[Index(cur->layerid, cur->nodeid, m.second.first)] = std::make_pair(cur, m.second);
+        }
+        layers[layer + 1].push_back(new_node);
+        return true;
+    }
+
+    return false;
 }

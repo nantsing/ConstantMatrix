@@ -54,6 +54,11 @@ int main() {
     Cost cost = circuit.cost();
     std::cout << cost.sum() << std::endl;
 
+    circuit.col_wise_optimization();
+    circuit.print_test_info();
+    cost = circuit.cost();
+    std::cout << cost.sum() << std::endl;
+    
     delete [] matrix;
     return 0;
 }

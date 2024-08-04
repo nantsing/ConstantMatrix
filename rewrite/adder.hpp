@@ -61,22 +61,40 @@ class Adder : public std::enable_shared_from_this< Adder<width> > {
     uint nodeid, layerid; // the id of the node in the layer
     uint elements, bit_width;
     std::vector< CSD<width> > data; // total [$elements] of elements
-    uint** srcid; // srcid[i][j] = the unique id of the src of the j-th bit of the i-th element
+    int** srcid; // srcid[i][j] = the unique id of the src of the j-th bit of the i-th element
     bool** hasUpdate; // hasUpdate[i][j] = whether the j-th bit of the i-th element has been updated
     
     std::map<uint , std::pair< std::shared_ptr<Adder>, std::pair<int, bool> > > src;
     std::map<Index, std::pair< std::shared_ptr<Adder>, std::pair<int, bool> > > dst;
     bool isRoot;
 
+    bool check_unupdated(int j, int s, int e) {
+        for (int k = s; k < e; k++) {
+            if (hasUpdate[j][k]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    void print_srcid() {
+        for (int i = 0; i < elements; i++) {
+            for (int j = 0; j < width + EXTRA_BITS; j++) {
+                std::cout << srcid[i][j] << " ";
+            }
+            std::cout << std::endl;
+        }
+    }
+
     // alloc mem for srcid and hasUpdate
     void alloc_mem() {
-        srcid = new uint*[elements];
+        srcid = new int*[elements];
         hasUpdate = new bool*[elements];
         for (int i = 0; i < elements; i++) {
-            srcid[i] = new uint[width];
-            hasUpdate[i] = new bool[width];
-            for (int j = 0; j < width; j++) {
-                srcid[i][j] = 0;
+            srcid[i] = new int[width + EXTRA_BITS];
+            hasUpdate[i] = new bool[width + EXTRA_BITS];
+            for (int j = 0; j < width + EXTRA_BITS; j++) {
+                srcid[i][j] = -1;
                 hasUpdate[i][j] = false;
             }
         }
@@ -93,6 +111,26 @@ class Adder : public std::enable_shared_from_this< Adder<width> > {
         alloc_mem();
         data.resize(elements);
         data[k] = CSD<width>(1);
+    }
+
+    // copy constructor
+    Adder(const Adder& other) {
+        counter = other.counter;
+        elements = other.elements;
+        bit_width = other.bit_width;
+        nodeid = other.nodeid;
+        layerid = other.layerid;
+        isRoot = other.isRoot;
+        alloc_mem();
+        data = other.data;
+        for (int i = 0; i < elements; i++) {
+            for (int j = 0; j < width + EXTRA_BITS; j++) {
+                srcid[i][j] = other.srcid[i][j];
+                hasUpdate[i][j] = other.hasUpdate[i][j];
+            }
+        }
+        src = other.src;
+        dst = other.dst;
     }
 
     // update output width of the adder

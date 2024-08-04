@@ -346,7 +346,7 @@ int _string_matching(vector<int >& str, int i, int j, int l, int n, int num)
 {
     int sum = 0;
     // 尝试匹配
-    for (int u = i + 1; u < n; ++u) {
+    for (int u = i; u < n; ++u) {
         // 从高位开始匹配
         for (int s = csd[u][j].len - l; s >= 0; --s) {
             bool IsMatching = _Is_matching(str, l, u, j, s, 1);
@@ -402,23 +402,12 @@ int string_matching(int n, int m, int l_min = 3, int l_max = 5, double p = 1.0)
 
                     if (sum > 0){
                         source.clear();
-                        bool Rep = false;
                         for (int k = 0; k < l; ++k) {
                             if (str[k] != 0) {
                                 if (str[k] == 1) {
                                     source.push_back(make_pair(&pool_baseline[j], make_pair(k, false)));
                                 } else if (str[k] == -1) {
                                     source.push_back(make_pair(&pool_baseline[j], make_pair(k, true)));
-                                }
-                                IsReplace[i][j][s+k] = true;
-                                if (Rep == false){
-                                    Replace[i][j][s+k] = num;
-                                    ShiftReplace[i][j][s+k] = s;
-                                    Rep = true;
-                                }
-                                else {
-                                    Replace[i][j][s+k] = -1;
-                                    ShiftReplace[i][j][s+k] = -1;
                                 }
                             }
                         }

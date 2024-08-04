@@ -8,6 +8,7 @@ typedef unsigned int uint;
 const double B = 0.0;
 const double  C = 1.2;
 const int w = 8;
+#define ROUND 1000
 
 
 int main() {
@@ -51,14 +52,20 @@ int main() {
 
     
     circuit.print_test_info();
-    Cost cost = circuit.cost();
-    std::cout << cost.sum() << std::endl;
+    Cost best_cost = circuit.cost();
+    std::cout << best_cost.sum() << std::endl;
 
-    circuit.col_wise_optimization();
-    circuit.print_test_info();
-    cost = circuit.cost();
-    std::cout << cost.sum() << std::endl;
-    
+    for (double p = 1.0; p >= 0.0; p -= 1.0 / ROUND) {
+        Circuit<w> new_circuit(circuit);
+        new_circuit.col_wise_optimization(3, 10);
+        Cost cost = new_circuit.cost();
+        if (cost < best_cost) {
+            best_cost = cost;
+            new_circuit.print_test_info();
+            std::cout << best_cost.sum() << std::endl;
+        }
+    }
+
     delete [] matrix;
     return 0;
 }

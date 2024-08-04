@@ -23,10 +23,12 @@ class Circuit {
 
     Circuit(uint n, uint m, int* matrix, double p = 1.0); // constructor
 
+    Circuit(const Circuit& other); // copy constructor
+
     Cost cost(); // return the total cost of the circuit
     
     // the starting connection of the adder
-    void naive_connect(std::shared_ptr<Adder<width> >& cur, int coefficient[], bool print_csd = false);
+    void naive_connect(std::shared_ptr<Adder<width> >& cur, int coefficient[]);
 
     void col_wise_optimization(int l_min = 3, int l_max = 5, int layer = 0); // optimize the circuit in row-wise
 
@@ -45,7 +47,57 @@ Circuit<width>::Circuit(uint n, uint m, int* matrix, double p) : n(n), m(m), p(p
     }
     for (int i = 0; i < n; i++, matrix += m) {
         layers[0][i] = std::make_shared<Adder<width> >(m, i, 0);
-        naive_connect(layers[0][i], matrix, true);
+        naive_connect(layers[0][i], matrix);
+    }
+}
+
+template <uint width>
+Circuit<width>::Circuit(const Circuit& other) : n(other.n), m(other.m), p(other.p) {
+    std::random_device rd;
+    gen = std::mt19937(rd());
+    
+    // copy the size
+    input.resize(other.input.size());
+    layers.resize(other.layers.size());
+    for (int i = 0; i < layers.size(); i++) {
+        layers[i].resize(other.layers[i].size());
+    }
+
+    // copy the data
+    for (int i = 0; i < input.size(); i++) {
+        input[i] = std::make_shared<Adder<width> >(*other.input[i]);
+    }
+    for (int i = 0; i < layers.size(); i++) {
+        for (int j = 0; j < layers[i].size(); j++) {
+            layers[i][j] = std::make_shared<Adder<width> >(*other.layers[i][j]);
+        }
+    }
+
+    // revise the src and dst
+    for (int i = 0; i < input.size(); i++) {
+        for (auto& dst : input[i]->dst) {
+            auto index = dst.first;
+            auto src = other.input[i]->dst[index];
+            dst.second.first = layers[src.first->layerid][src.first->nodeid];
+        }
+    }
+    for (int i = 0; i < layers.size(); i++) {
+        for (int j = 0; j < layers[i].size(); j++) {
+            for (auto& src : layers[i][j]->src) {
+                auto index = src.first;
+                auto dst = other.layers[i][j]->src[index];
+                if (dst.first->layerid == 0xffffffff) {
+                    src.second.first = input[dst.first->nodeid];
+                } else {
+                    src.second.first = layers[dst.first->layerid][dst.first->nodeid];
+                }
+            }
+            for (auto& dst : layers[i][j]->dst) {
+                auto index = dst.first;
+                auto src = other.layers[i][j]->dst[index];
+                dst.second.first = layers[src.first->layerid][src.first->nodeid];
+            }
+        }
     }
 }
 
@@ -64,10 +116,9 @@ Cost Circuit<width>::cost() {
 }
 
 template <uint width>
-void Circuit<width>::naive_connect(std::shared_ptr<Adder<width> >& cur, int coefficient[], bool print_csd) {
+void Circuit<width>::naive_connect(std::shared_ptr<Adder<width> >& cur, int coefficient[]) {
     for (int i = 0; i < m; i++) {
         cur->data[i] = CSD<width>(coefficient[i]);
-        if (print_csd) std::cout << cur->data[i] << " ";
         for (int j = 0; j < cur->data[i].len; j++) {
             Index dst_info(cur->layerid, cur->nodeid, j);
             // std::cout << dst_info.node << " " << dst_info.bitshift << " " << dst_info.layer << " " << std::endl;
@@ -82,7 +133,6 @@ void Circuit<width>::naive_connect(std::shared_ptr<Adder<width> >& cur, int coef
             }
         }
     }
-    if (print_csd) std::cout << std::endl;
     cur->update_width();
 }
 

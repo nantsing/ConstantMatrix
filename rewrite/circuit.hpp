@@ -7,12 +7,25 @@
 #include <cassert>
 #include <algorithm>
 
+struct difference{
+    std::pair<int, int> index; // layer, node
+    std::pair<int, int> shift; // shift1, shift2 to recover the Index
+    std::pair<int, bool> differ; // Δ shift, same/different sign
+    friend bool operator < (const difference &a, const difference &b) {
+        if (a.differ.first != b.differ.first) return a.differ.first < b.differ.first;
+        else if (a.differ.second == true && b.differ.second == false) return false;
+        return true;
+    }
+};
+
 template <uint width>
 class Circuit {
     // return : {nodeid, {shift, neg}}
     std::vector< std::pair<int, std::pair<int, bool> > > _sub_num_match(CSD<width> goal, int layer, int col);
 
-    bool _check_update_nice(CSD<width> goal, int layer, int col, std::vector< std::pair<int, std::pair<int, bool> > >& match, int new_node_id); 
+    bool _check_col_update_nice(CSD<width> goal, int layer, int col, std::vector< std::pair<int, std::pair<int, bool> > >& match, int new_layer_id, int new_node_id); 
+
+    bool _check_point_merge_update_nice(std::shared_ptr<Adder<width> > goal, int layer, std::vector<difference>& differ, int new_layer_id, int new_node_id);
 
     public:
     std::mt19937 gen;
@@ -36,7 +49,7 @@ class Circuit {
 
     void print_csd_form(); // print the csd form of the circuit
 
-    void point_merge (int layer); // merge the points in the same layer
+    void point_merge (int layer, bool is_input = false); // merge the points in the same layer
 };
 
 template <uint width>
@@ -184,9 +197,9 @@ void Circuit<width>::print_test_info() {
 template <uint width>
 void Circuit<width>::col_wise_optimization(int l_min, int l_max, int layer) {
     // 现在只能处理最靠近输入的一层
-    assert(layer + 1 == layers.size());
     
-    layers.resize(layer + 2);
+    int new_layer_id = layers.size();
+    layers.resize(layers.size() + 1);
     
     // 枚举匹配字符串的长度
     std::vector<int> l_list;
@@ -222,10 +235,13 @@ void Circuit<width>::col_wise_optimization(int l_min, int l_max, int layer) {
                             m.second.second = !m.second.second;
                         }
                     }
-                    _check_update_nice(sub_num, layer, j, match, layers[layer + 1].size());
+                    _check_col_update_nice(sub_num, layer, j, match, new_layer_id, layers[new_layer_id].size());
                 }
             }
         }
+    }
+    if (layers[new_layer_id].size() == 0) {
+        layers.resize(layers.size() - 1);
     }
 }
 
@@ -251,8 +267,8 @@ std::vector< std::pair<int, std::pair<int, bool> > > Circuit<width>::_sub_num_ma
 }
 
 template <uint width>
-bool Circuit<width>::_check_update_nice(CSD<width> goal, int layer, int col, std::vector< std::pair<int, std::pair<int, bool> > >& match, int new_node_id) {
-    std::shared_ptr< Adder<width> > new_node = std::make_shared<Adder<width> >(m, new_node_id, layer + 1);
+bool Circuit<width>::_check_col_update_nice(CSD<width> goal, int layer, int col, std::vector< std::pair<int, std::pair<int, bool> > >& match, int new_layer_id, int new_node_id) {
+    std::shared_ptr< Adder<width> > new_node = std::make_shared<Adder<width> >(m, new_node_id, new_layer_id);
     int co[m];
     for (int i = 0; i < m; i++) {
         co[i] = 0;
@@ -307,38 +323,35 @@ bool Circuit<width>::_check_update_nice(CSD<width> goal, int layer, int col, std
             cur->src[new_id] = std::make_pair(new_node, m.second);
             new_node->dst[Index(cur->layerid, cur->nodeid, m.second.first)] = std::make_pair(cur, m.second);
         }
-        layers[layer + 1].push_back(new_node);
+        layers[new_layer_id].push_back(new_node);
         return true;
     }
 
     return false;
 }
 
-struct difference{
-    std::pair<int, int> index; // layer, node
-    std::pair<int, int> shift; // shift1, shift2 to recover the Index
-    std::pair<int, bool> differ; // Δshift, same/different sign
-    friend bool operator < (const difference &a, const difference &b) {
-        if (a.differ.first != b.differ.first) return a.differ.first < b.differ.first;
-        else if (a.differ.second == true && b.differ.second == false) return false;
-        return true;
-    }
-};
-
 template <uint width>
-void Circuit<width>::point_merge(int layer) {
+void Circuit<width>::point_merge(int layer, bool is_input) {
+    int new_layer_id = layers.size();
+    layers.resize(layers.size() + 1);
+
+    std::vector<std::shared_ptr<Adder<width>>>* layer_p;
+
+    if (is_input) layer_p = &input;
+    else layer_p = &layers[layer];
+
     // 枚举当前层中的两个点看能否合并
-    for (int i = 0; i < layers[layer].size(); i++) {
+    for (int i = 0; i < (*layer_p).size(); i++) {
         for (int j = 0; j < i; j++) {
             std::vector<difference> diff; // 存储同一目标点中发生的位移和取负的差别
-            for (auto iter_i = layers[layer][i]->dst.begin(); iter_i != layers[layer][i]->dst.end(); iter_i++) {
+            for (auto iter_i = (*layer_p)[i]->dst.begin(); iter_i != (*layer_p)[i]->dst.end(); iter_i++) {
                 assert(iter_i->first.bitshift == iter_i->second.second.first);
                 auto node_info = std::make_pair(iter_i->first.layer, iter_i->first.node);
 
                 Index start(node_info.first, node_info.second, INT32_MIN);
                 Index end(node_info.first, node_info.second, INT32_MAX);
-                auto it_start = layers[layer][j]->dst.lower_bound(start);
-                auto it_end = layers[layer][j]->dst.upper_bound(end);
+                auto it_start = (*layer_p)[j]->dst.lower_bound(start);
+                auto it_end = (*layer_p)[j]->dst.upper_bound(end);
                 for (auto iter_j = it_start; iter_j != it_end; iter_j++) {
                     assert(node_info.first == iter_j->first.layer);
                     assert(node_info.second == iter_j->first.node);
@@ -387,6 +400,81 @@ void Circuit<width>::point_merge(int layer) {
             for (auto& it: best_diff) {
                 std::cout << it.index.second << std::endl;
             }
+
+            // make the new adder
+            bool keep_adderi = true, keep_adderj = true;
+            if (!is_input) {
+                // TODO: check whether to delete the adder i/j
+            }
+
+            //_check_point_merge_update_nice();
         }
     }
+    if (layers[new_layer_id].size() == 0) {
+        layers.resize(layers.size() - 1);
+    }
+}
+
+template <uint width>
+bool Circuit<width>::_check_point_merge_update_nice(std::shared_ptr< Adder<width> > goal, int layer, std::vector<difference>& differ, int new_layer_id, int new_node_id) {
+    // std::shared_ptr< Adder<width> > new_node = std::make_shared<Adder<width> >(m, new_node_id, new_layer_id);
+    // int co[m];
+    // for (int i = 0; i < m; i++) {
+    //     co[i] = 0;
+    // }
+    // co[col] = goal.num;
+    // naive_connect(new_node, co);
+    
+    // Cost old_cost;
+    // int last = -1;
+    // Cost new_cost = new_node->cost();
+    // std::shared_ptr< Adder<width> > cur;
+    // for (auto& m : match) {
+    //     if (m.first != last) {
+    //         if (last != -1) {
+    //             new_cost += cur->cost();
+    //             old_cost += layers[layer][last]->cost();
+    //         }
+    //         cur = std::make_shared< Adder<width> >(*layers[layer][m.first]);
+    //     }
+    //     last = m.first;
+    //     int id = cur->counter++;
+    //     cur->src[id] = std::make_pair(new_node, m.second);
+    //     for (int i = m.second.first; i < m.second.first + goal.len; i++) {
+    //         cur->hasUpdate[col][i] = true;
+    //         if (cur->srcid[col][i] != -1) {
+    //             cur->src.erase(cur->srcid[col][i]);
+    //         }
+    //         cur->srcid[col][i] = id;
+    //     }
+    // }
+    // new_cost += cur->cost();
+    // old_cost += layers[layer][last]->cost();
+
+    // std::uniform_real_distribution<double> distr(0, 1);
+
+    // if ((new_cost.sum() < old_cost.sum() && distr(gen) <= p) || 
+    //     (new_cost.sum() >= old_cost.sum() && distr(gen) < 1 - p)) {
+    //     for (auto& m : match) {
+    //         auto cur = layers[layer][m.first];
+    //         int new_id = cur->counter++;
+    //         for (int i = m.second.first; i < m.second.first + goal.len; i++) {
+    //             cur->hasUpdate[col][i] = true;
+    //             if (cur->srcid[col][i] != -1) {
+    //                 Index idx(cur->layerid, cur->nodeid, i);
+    //                 if (cur->src.find(cur->srcid[col][i]) != cur->src.end()) {
+    //                     cur->src[cur->srcid[col][i]].first->dst.erase(idx);
+    //                     cur->src.erase(cur->srcid[col][i]);
+    //                 }
+    //             }
+    //             cur->srcid[col][i] = new_id;
+    //         }
+    //         cur->src[new_id] = std::make_pair(new_node, m.second);
+    //         new_node->dst[Index(cur->layerid, cur->nodeid, m.second.first)] = std::make_pair(cur, m.second);
+    //     }
+    //     layers[new_layer_id].push_back(new_node);
+    //     return true;
+    // }
+
+    return false;
 }

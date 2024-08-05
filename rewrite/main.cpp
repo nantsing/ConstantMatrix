@@ -55,12 +55,10 @@ int main() {
     Cost best_cost = circuit.cost();
     std::cout << best_cost.sum() << std::endl;
 
-    circuit.col_wise_optimization();
-    circuit.print_csd_form();
-    circuit.print_test_info();
-    circuit.point_merge(1);
-
-    return 0;
+    // circuit.col_wise_optimization();
+    // circuit.print_csd_form();
+    // circuit.print_test_info();
+    // circuit.point_merge(1);
 
     for (double p = 1.0; p >= 0.0; p -= 1.0 / ROUND) {
         Circuit<w> new_circuit(circuit);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <algorithm>
 
 typedef unsigned int uint;
 
@@ -18,6 +19,8 @@ class CSD {
     bool operator==(const CSD& other); // equal operator
     bool operator!=(const CSD& other); // not equal operator
     CSD operator -(); // negation operator
+    CSD operator <<(const int bits); // left shift
+    CSD operator +(const CSD& other); // add
     CSD get_sub(int l, int r); // get the sub word from [l, r)
 
     friend std::ostream& operator<<(std::ostream& os, const CSD& num) {
@@ -128,4 +131,14 @@ CSD<width> CSD<width>::get_sub(int l, int r) {
         res.num = res.num * 2 + res.bits[i];
     }
     return res;
+}
+
+template <uint width>
+CSD<width> CSD<width>::operator<< (const int bits) {
+    return CSD<width>(num << bits);
+}
+
+template <uint width>
+CSD<width> CSD<width>::operator + (const CSD& other) {
+    return CSD<width>(num + other.num);
 }

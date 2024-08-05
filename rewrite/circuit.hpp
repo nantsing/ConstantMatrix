@@ -35,6 +35,8 @@ class Circuit {
     void print_test_info(); // print the test info
 
     void print_csd_form(); // print the csd form of the circuit
+
+    void point_merge (int layer); // merge the points in the same layer
 };
 
 template <uint width>
@@ -131,7 +133,8 @@ Cost Circuit<width>::cost() {
     }
     for (int i = 0; i < layers.size(); i++) {
         for (int j = 0; j < layers[i].size(); j++) {
-            ret += layers[i][j]->cost();
+            if (i == 0 || layers[i][j]->dst.size() > 0)
+                ret += layers[i][j]->cost();
         }
     }
     return ret;
@@ -207,6 +210,18 @@ void Circuit<width>::col_wise_optimization(int l_min, int l_max, int layer) {
                     auto match = _sub_num_match(sub_num, layer, j);
                     assert(match.size() > 0);
                     if (match.size() == 1) continue;
+                    // 如果需要取负的较多，就把goal改为-goal
+                    int pos = 0, neg = 0;
+                    for (auto& m : match) {
+                        if (m.second.second) neg++;
+                        else pos++;
+                    }
+                    if (neg > pos) {
+                        sub_num = -sub_num;
+                        for (auto& m : match) {
+                            m.second.second = !m.second.second;
+                        }
+                    }
                     _check_update_nice(sub_num, layer, j, match, layers[layer + 1].size());
                 }
             }
@@ -297,4 +312,81 @@ bool Circuit<width>::_check_update_nice(CSD<width> goal, int layer, int col, std
     }
 
     return false;
+}
+
+struct difference{
+    std::pair<int, int> index; // layer, node
+    std::pair<int, int> shift; // shift1, shift2 to recover the Index
+    std::pair<int, bool> differ; // Δshift, same/different sign
+    friend bool operator < (const difference &a, const difference &b) {
+        if (a.differ.first != b.differ.first) return a.differ.first < b.differ.first;
+        else if (a.differ.second == true && b.differ.second == false) return false;
+        return true;
+    }
+};
+
+template <uint width>
+void Circuit<width>::point_merge(int layer) {
+    // 枚举当前层中的两个点看能否合并
+    for (int i = 0; i < layers[layer].size(); i++) {
+        for (int j = 0; j < i; j++) {
+            std::vector<difference> diff; // 存储同一目标点中发生的位移和取负的差别
+            for (auto iter_i = layers[layer][i]->dst.begin(); iter_i != layers[layer][i]->dst.end(); iter_i++) {
+                assert(iter_i->first.bitshift == iter_i->second.second.first);
+                auto node_info = std::make_pair(iter_i->first.layer, iter_i->first.node);
+
+                Index start(node_info.first, node_info.second, INT32_MIN);
+                Index end(node_info.first, node_info.second, INT32_MAX);
+                auto it_start = layers[layer][j]->dst.lower_bound(start);
+                auto it_end = layers[layer][j]->dst.upper_bound(end);
+                for (auto iter_j = it_start; iter_j != it_end; iter_j++) {
+                    assert(node_info.first == iter_j->first.layer);
+                    assert(node_info.second == iter_j->first.node);
+                    assert(iter_j->first.bitshift == iter_j->second.second.first);
+
+                    auto delta = std::make_pair(iter_i->first.bitshift - iter_j->first.bitshift, iter_i->second.second.second == iter_j->second.second.second);
+                    auto shift = std::make_pair(iter_i->first.bitshift, iter_j->first.bitshift);
+                    diff.push_back(difference{node_info, shift, delta});
+                }
+            }
+            
+            if (diff.size() == 0) continue;
+
+            // find the differ with most number of use
+            std::sort(diff.begin(), diff.end());
+            
+            std::vector<difference> best_diff;
+            std::pair<int, bool> last;
+            int len = 0;
+            for (int k = 0; k <= diff.size(); k++) {
+                if (k != 0 && (k == diff.size() || last != diff[k].differ)) {
+                    bool better = false;
+                    if (len > best_diff.size()) {
+                        better = true;
+                    } else if (len == best_diff.size()) {
+                        if (abs(last.first) < abs(best_diff[0].differ.first)) {
+                            better = true;
+                        } else if (abs(last.first) == abs(best_diff[0].differ.first) && last.second == false) {
+                            better = true;
+                        }
+                    }
+
+                    if (better) {
+                        best_diff.clear();
+                        for (int l = k - len; l < k; l++) {
+                            best_diff.push_back(diff[l]);
+                        }
+                    }
+                    len = 0;
+                    if (k == diff.size()) break;
+                }
+                last = diff[k].differ;
+                len++;
+            }
+            std::cout << i << " " << j << std::endl;
+            for (auto& it: best_diff) {
+                std::cout << it.index.second << std::endl;
+            }
+        }
+    }
 }

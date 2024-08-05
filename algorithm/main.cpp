@@ -291,7 +291,6 @@ void _recover(vector<int >& str, int i, int j, int l, int n)
 
         }
     }
-
 }
 
 void _set0(int l, int u, int j, int s)
@@ -421,8 +420,10 @@ int string_matching(int n, int m, int l_min = 3, int l_max = 5, double p = 1.0)
                             _recover(str, i, j, l, n);
                             num--;
                         }
-
+                    } else {
+                        _recover(str, i, j, l, n);
                     }
+
                 }
             }
         }

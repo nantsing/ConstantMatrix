@@ -1,15 +1,18 @@
 #pragma once
 #include "adder.hpp"
+#include <utility>
 #include <vector>
 #include <memory>
 #include <unordered_map>
 #include <random>
 #include <cassert>
 #include <algorithm>
+#include <ranges>
 
 struct difference{
     std::pair<int, int> index; // layer, node
-    std::pair<int, int> shift; // shift1, shift2 to recover the Index
+    std::pair<int, int> shift; // shift1, shift2 for the target number
+    std::pair<bool, bool> neg; // neg1, neg2 for the target number
     std::pair<int, bool> differ; // Δ shift, same/different sign
     friend bool operator < (const difference &a, const difference &b) {
         if (a.differ.first != b.differ.first) return a.differ.first < b.differ.first;
@@ -25,7 +28,7 @@ class Circuit {
 
     bool _check_col_update_nice(CSD<width> goal, int layer, int col, std::vector< std::pair<int, std::pair<int, bool> > >& match, int new_layer_id, int new_node_id); 
 
-    bool _check_point_merge_update_nice(std::shared_ptr<Adder<width> > goal, int layer, std::vector<difference>& differ, int new_layer_id, int new_node_id);
+    bool _check_point_merge_update_nice(std::shared_ptr<Adder<width> > new_node, std::vector<std::shared_ptr<Adder<width>>>& layer, std::vector<difference>& differ, int new_layer_id, int new_node_id, bool keep_adderi, bool keep_adderj, std::pair<int, int> src_node, std::pair<int, int> new_shift, std::pair<bool, bool> new_neg);
 
     public:
     std::mt19937 gen;
@@ -49,8 +52,30 @@ class Circuit {
 
     void print_csd_form(); // print the csd form of the circuit
 
+    void print_dst(); // print the dst of the points
+
     void point_merge (int layer, bool is_input = false); // merge the points in the same layer
 };
+
+template <uint width>
+void Circuit<width>::print_dst() {
+    for (int i = 0; i < m; i++) {
+        std::cout << "input " << i << " : ";
+        for (auto& dst : input[i]->dst) {
+            std::cout << "(" << dst.first.layer << " " << dst.first.node << " " << dst.first.bitshift << ") ";
+        }
+        std::cout << std::endl;
+    }
+    for (int i = layers.size() - 1; i > 0; i--) {
+        for (int j = 0; j < layers[i].size(); j++) {
+            std::cout << "layer " << i << " node " << j << " : ";
+            for (auto& dst : layers[i][j]->dst) {
+                std::cout << "(" << dst.first.layer << " " << dst.first.node << " " << dst.first.bitshift << ") ";
+            }
+            std::cout << std::endl;
+        }
+    }
+}
 
 template <uint width>
 void Circuit<width>::print_csd_form() {
@@ -114,8 +139,8 @@ Circuit<width>::Circuit(const Circuit& other) : n(other.n), m(other.m), p(other.
     for (int i = 0; i < input.size(); i++) {
         for (auto& dst : input[i]->dst) {
             auto index = dst.first;
-            auto src = other.input[i]->dst[index];
-            dst.second.first = layers[src.first->layerid][src.first->nodeid];
+            auto src = other.input[i]->dst[index].first;
+            dst.second.first = layers[src.lock()->layerid][src.lock()->nodeid];
         }
     }
     for (int i = 0; i < layers.size(); i++) {
@@ -131,8 +156,8 @@ Circuit<width>::Circuit(const Circuit& other) : n(other.n), m(other.m), p(other.
             }
             for (auto& dst : layers[i][j]->dst) {
                 auto index = dst.first;
-                auto src = other.layers[i][j]->dst[index];
-                dst.second.first = layers[src.first->layerid][src.first->nodeid];
+                auto src = other.layers[i][j]->dst[index].first;
+                dst.second.first = layers[src.lock()->layerid][src.lock()->nodeid];
             }
         }
     }
@@ -287,6 +312,7 @@ bool Circuit<width>::_check_col_update_nice(CSD<width> goal, int layer, int col,
                 old_cost += layers[layer][last]->cost();
             }
             cur = std::make_shared< Adder<width> >(*layers[layer][m.first]);
+            cur->set_temp();
         }
         last = m.first;
         int id = cur->counter++;
@@ -359,7 +385,8 @@ void Circuit<width>::point_merge(int layer, bool is_input) {
 
                     auto delta = std::make_pair(iter_i->first.bitshift - iter_j->first.bitshift, iter_i->second.second.second == iter_j->second.second.second);
                     auto shift = std::make_pair(iter_i->first.bitshift, iter_j->first.bitshift);
-                    diff.push_back(difference{node_info, shift, delta});
+                    auto neg = std::make_pair(iter_i->second.second.second, iter_j->second.second.second);
+                    diff.push_back(difference{node_info, shift, neg, delta});
                 }
             }
             
@@ -404,10 +431,78 @@ void Circuit<width>::point_merge(int layer, bool is_input) {
             // make the new adder
             bool keep_adderi = true, keep_adderj = true;
             if (!is_input) {
-                // TODO: check whether to delete the adder i/j
+                if ((*layer_p)[i]->dst.size() == best_diff.size()) {
+                    keep_adderi = false;
+                }
+                if ((*layer_p)[j]->dst.size() == best_diff.size()) {
+                    keep_adderj = false;
+                }
+            }
+            int new_node_id = layers[new_layer_id].size();
+            auto new_node = std::make_shared<Adder<width>>(m, new_node_id, new_layer_id);
+            
+            // get the shift number and neg for the new_node
+            std::pair<int, int> new_shift;
+            std::pair<bool, bool> new_neg;
+            if (best_diff[0].differ.first > 0) {
+                new_shift = std::make_pair(best_diff[0].differ.first, 0);
+            } else {
+                new_shift = std::make_pair(0, -best_diff[0].differ.first);
             }
 
-            //_check_point_merge_update_nice();
+            // check pos or neg is better
+            uint sum_pos = 0, sum_neg = 0;
+            for (auto& it: best_diff) {
+                if (it.neg.first) {
+                    sum_neg++;
+                } else {
+                    sum_pos++;
+                }
+            }
+            if (best_diff[0].differ.second) {
+                new_neg = sum_neg > sum_pos ? std::make_pair(true, true) : std::make_pair(false, false);
+            } else {
+                new_neg = sum_pos > sum_neg ? std::make_pair(false, true) : std::make_pair(true, false);
+            }
+
+            // for (auto& it: best_diff) {
+            //     it.shift.first -= new_shift.first;
+            //     it.shift.second -= new_shift.second;
+            //     it.neg.first = (it.neg.first != new_neg.first);
+            //     it.neg.second = (it.neg.second != new_neg.second);
+            // }
+
+            if (keep_adderi && keep_adderj) {
+                new_node->connect((*layer_p)[i], new_shift.first, new_neg.first);
+                new_node->connect((*layer_p)[j], new_shift.second, new_neg.second);
+            } else if (!keep_adderi &&!keep_adderj) {
+                int co[m];
+                for (int k = 0; k < m; k++) {
+                    co[k] = (*layer_p)[i]->data[k].num + (*layer_p)[j]->data[k].num;
+                }
+                naive_connect(new_node, co);
+            } else if (keep_adderi &&!keep_adderj) {
+                int co[m];
+                for (int k = 0; k < m; k++) {
+                    co[k] = (*layer_p)[j]->data[k].num;
+                }
+                naive_connect(new_node, co);
+                new_node->connect((*layer_p)[i], new_shift.first, new_neg.first);
+            } else if(!keep_adderi && keep_adderj) {
+                int co[m];
+                for (int k = 0; k < m; k++) {
+                    co[k] = (*layer_p)[i]->data[k].num;
+                }
+                naive_connect(new_node, co);
+                new_node->connect((*layer_p)[j], new_shift.second, new_neg.second);                
+            }
+            new_node->update_width();
+            // std::cout << "New Node Information:" << std::endl;
+            // std::cout << "ID: " << new_node_id << std::endl;
+            // std::cout << "Layer: " << new_layer_id << std::endl;
+            // std::cout << "Shift: " << new_shift.first << ", " << new_shift.second << std::endl;
+            // std::cout << "Neg: " << new_neg.first << ", " << new_neg.second << std::endl;
+            _check_point_merge_update_nice(new_node, *layer_p, best_diff, new_layer_id, new_node_id, keep_adderi, keep_adderj, std::make_pair(i, j), new_shift, new_neg);
         }
     }
     if (layers[new_layer_id].size() == 0) {
@@ -416,65 +511,109 @@ void Circuit<width>::point_merge(int layer, bool is_input) {
 }
 
 template <uint width>
-bool Circuit<width>::_check_point_merge_update_nice(std::shared_ptr< Adder<width> > goal, int layer, std::vector<difference>& differ, int new_layer_id, int new_node_id) {
-    // std::shared_ptr< Adder<width> > new_node = std::make_shared<Adder<width> >(m, new_node_id, new_layer_id);
-    // int co[m];
-    // for (int i = 0; i < m; i++) {
-    //     co[i] = 0;
-    // }
-    // co[col] = goal.num;
-    // naive_connect(new_node, co);
+bool Circuit<width>::_check_point_merge_update_nice(std::shared_ptr< Adder<width> > new_node, 
+std::vector<std::shared_ptr<Adder<width>>>& layer, std::vector<difference>& differ, 
+int new_layer_id, int new_node_id, bool keep_adderi, bool keep_adderj, std::pair<int, int> src_node,
+std::pair<int, int> new_shift, std::pair<bool, bool> new_neg) {
+
+    Cost old_cost;
+    if (!keep_adderi) {
+        old_cost += layer[src_node.first]->cost();
+    }
+    if (!keep_adderj) {
+        old_cost += layer[src_node.second]->cost();
+    }
+    // 需要考虑同一个dst中用到两次src的情况
+    std::ranges::sort(differ, {}, &difference::index);
+    auto last = std::make_pair(-1, -1);
     
-    // Cost old_cost;
-    // int last = -1;
-    // Cost new_cost = new_node->cost();
-    // std::shared_ptr< Adder<width> > cur;
-    // for (auto& m : match) {
-    //     if (m.first != last) {
-    //         if (last != -1) {
-    //             new_cost += cur->cost();
-    //             old_cost += layers[layer][last]->cost();
-    //         }
-    //         cur = std::make_shared< Adder<width> >(*layers[layer][m.first]);
-    //     }
-    //     last = m.first;
-    //     int id = cur->counter++;
-    //     cur->src[id] = std::make_pair(new_node, m.second);
-    //     for (int i = m.second.first; i < m.second.first + goal.len; i++) {
-    //         cur->hasUpdate[col][i] = true;
-    //         if (cur->srcid[col][i] != -1) {
-    //             cur->src.erase(cur->srcid[col][i]);
-    //         }
-    //         cur->srcid[col][i] = id;
-    //     }
-    // }
-    // new_cost += cur->cost();
-    // old_cost += layers[layer][last]->cost();
+    Cost new_cost = new_node->cost();
+    std::shared_ptr< Adder<width> > cur;
+    for (auto& it : differ) {
+        if (it.index != last) {
+            if (last != std::make_pair(-1, -1)) {
+                new_cost += cur->cost();
+                old_cost += layers[last.first][last.second]->cost();
+            }
+            cur = std::make_shared< Adder<width> >(*layers[it.index.first][it.index.second]);
+            cur->set_temp();
+        }
+        last = it.index;
+        int id = cur->counter++;
 
-    // std::uniform_real_distribution<double> distr(0, 1);
+        int shift = it.shift.first - new_shift.first;
+        bool neg = (it.neg.first != new_neg.first);
 
-    // if ((new_cost.sum() < old_cost.sum() && distr(gen) <= p) || 
-    //     (new_cost.sum() >= old_cost.sum() && distr(gen) < 1 - p)) {
-    //     for (auto& m : match) {
-    //         auto cur = layers[layer][m.first];
-    //         int new_id = cur->counter++;
-    //         for (int i = m.second.first; i < m.second.first + goal.len; i++) {
-    //             cur->hasUpdate[col][i] = true;
-    //             if (cur->srcid[col][i] != -1) {
-    //                 Index idx(cur->layerid, cur->nodeid, i);
-    //                 if (cur->src.find(cur->srcid[col][i]) != cur->src.end()) {
-    //                     cur->src[cur->srcid[col][i]].first->dst.erase(idx);
-    //                     cur->src.erase(cur->srcid[col][i]);
-    //                 }
-    //             }
-    //             cur->srcid[col][i] = new_id;
-    //         }
-    //         cur->src[new_id] = std::make_pair(new_node, m.second);
-    //         new_node->dst[Index(cur->layerid, cur->nodeid, m.second.first)] = std::make_pair(cur, m.second);
-    //     }
-    //     layers[new_layer_id].push_back(new_node);
-    //     return true;
-    // }
+        cur->src[id] = std::make_pair(new_node, std::make_pair(shift, neg));
+
+        for (int i = 0; i < m; i++) {
+            for (int j = 0; j < layer[src_node.first]->data[i].len; j++) {
+                assert (j + it.shift.first < cur->data[i].len);
+                if (cur->srcid[i][j + it.shift.first] != -1) {
+                    cur->src.erase(cur->srcid[i][j + it.shift.first]);
+                }
+                cur->srcid[i][j + it.shift.first] = id;
+            }
+        }
+        for (int i = 0; i < m; i++) {
+            for (int j = 0; j < layer[src_node.second]->data[i].len; j++) {
+                assert (j + it.shift.second < cur->data[i].len);
+                if (cur->srcid[i][j + it.shift.second] != -1) {
+                    cur->src.erase(cur->srcid[i][j + it.shift.second]);
+                }
+                cur->srcid[i][j + it.shift.second] = id;
+            }
+        }
+    }
+    new_cost += cur->cost();
+    old_cost += layers[last.first][last.second]->cost();
+
+    std::uniform_real_distribution<double> distr(0, 1);
+
+    if ((new_cost.sum() < old_cost.sum() && distr(gen) <= p) || 
+        (new_cost.sum() >= old_cost.sum() && distr(gen) < 1 - p)) {
+        for (auto& it : differ) {
+
+            auto cur = layers[it.index.first][it.index.second];
+            int id = cur->counter++;
+
+            int shift = it.shift.first - new_shift.first;
+            bool neg = (it.neg.first != new_neg.first);
+
+            cur->src[id] = std::make_pair(new_node, std::make_pair(shift, neg));
+            new_node->dst[Index(cur->layerid, cur->nodeid, shift)] = std::make_pair(cur, std::make_pair(shift, neg));
+
+            for (int i = 0; i < m; i++) {
+                for (int j = 0; j < layer[src_node.first]->data[i].len; j++) {
+                    assert (j + it.shift.first < cur->data[i].len);
+                    if (cur->srcid[i][j + it.shift.first] != -1) {
+                        Index idx(cur->layerid, cur->nodeid, j + it.shift.first);
+                        if (cur->src.find(cur->srcid[i][j + it.shift.first]) != cur->src.end()) {
+                            cur->src[cur->srcid[i][j + it.shift.first]].first->dst.erase(idx);
+                            cur->src.erase(cur->srcid[i][j + it.shift.first]);
+                        }
+                    }
+                    cur->srcid[i][j + it.shift.first] = id;
+                }
+            }
+            for (int i = 0; i < m; i++) {
+                for (int j = 0; j < layer[src_node.second]->data[i].len; j++) {
+                    assert (j + it.shift.second < cur->data[i].len);
+                    if (cur->srcid[i][j + it.shift.second] != -1) {
+                        Index idx(cur->layerid, cur->nodeid, j + it.shift.second);
+                        if (cur->src.find(cur->srcid[i][j + it.shift.second]) != cur->src.end()) {
+                            cur->src[cur->srcid[i][j + it.shift.second]].first->dst.erase(idx);
+                            cur->src.erase(cur->srcid[i][j + it.shift.second]);
+                        }
+                    }
+                    cur->srcid[i][j + it.shift.second] = id;
+                }
+            }
+        }
+        layers[new_layer_id].push_back(new_node);
+
+        return true;
+    }
 
     return false;
 }

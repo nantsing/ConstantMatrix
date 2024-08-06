@@ -5,6 +5,7 @@ extern const double B, C;
 #include <vector>
 #include <memory>
 #include <map>
+#include <cassert>
 
 class Cost {
     public:
@@ -63,10 +64,13 @@ class Adder : public std::enable_shared_from_this< Adder<width> > {
     std::vector< CSD<width> > data; // total [$elements] of elements
     int** srcid; // srcid[i][j] = the unique id of the src of the j-th bit of the i-th element
     bool** hasUpdate; // hasUpdate[i][j] = whether the j-th bit of the i-th element has been updated
+    bool isTemp = false; // if the adder is a copy of another adder, and is only for temp use, then isCopy = true, this means that when the adder is deleted, the src->dst should not be deleted
     
     std::map<uint , std::pair< std::shared_ptr<Adder>, std::pair<int, bool> > > src;
-    std::map<Index, std::pair< std::shared_ptr<Adder>, std::pair<int, bool> > > dst;
+    std::map<Index, std::pair< std::weak_ptr<Adder>, std::pair<int, bool> > > dst;
     bool isRoot;
+
+    void set_temp(); // set the adder to be a temp adder
 
     bool check_unupdated(int j, int s, int e); // check the s-th to e-th bits of the j-th element are unupdated
 
@@ -91,6 +95,8 @@ class Adder : public std::enable_shared_from_this< Adder<width> > {
 
     // the cost of the adder
     Cost cost();
+
+    void connect(std::shared_ptr<Adder<width>>& src, int shift, bool neg);
 };
 
 template <uint width>
@@ -175,6 +181,14 @@ void Adder<width>::update_width() {
 
 template <uint width>
 Adder<width>::~Adder() {
+    if (!isTemp) {
+        for (auto it = src.begin(); it != src.end(); it++) {
+            auto t = it->second;
+            auto other = t.first;
+            auto index = Index(layerid, nodeid, t.second.first);
+            other->dst.erase(index);
+        }
+    }
     for (int i = 0; i < elements; i++) {
         delete[] srcid[i];
         delete[] hasUpdate[i];
@@ -205,7 +219,27 @@ Cost Adder<width>::cost() {
             ret.b += wi;
         }
     }
-    ret.c = max_width;
+    if (src.size() > 1) ret.c = max_width;
     ret.x -= min_width;
     return ret;
+}
+
+template <uint width>
+void Adder<width>::connect(std::shared_ptr<Adder<width>>& other, int shift, bool neg) {
+    int new_id = counter++;
+    for (int i = 0; i < elements; i++) {
+        for (int j = 0; j < other->data[i].len; j++) {
+            assert(srcid[i][j + shift] == -1);
+            srcid[i][j + shift] = new_id;
+        }
+        data[i] = data[i] + (other->data[i] << shift);
+    }
+    src[new_id] = std::make_pair(other, std::make_pair(shift, neg));
+    auto index = Index(layerid, nodeid, shift);
+    other->dst[index] = std::make_pair(this->shared_from_this(), std::make_pair(shift, neg));
+}
+
+template <uint width>
+void Adder<width>::set_temp() {
+    isTemp = true;
 }

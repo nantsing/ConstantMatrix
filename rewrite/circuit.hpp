@@ -1,5 +1,7 @@
 #pragma once
 #include "adder.hpp"
+#include <cstdio>
+#include <iostream>
 #include <utility>
 #include <vector>
 #include <memory>
@@ -14,11 +16,6 @@ struct difference{
     std::pair<int, int> shift; // shift1, shift2 for the target number
     std::pair<bool, bool> neg; // neg1, neg2 for the target number
     std::pair<int, bool> differ; // Δ shift, same/different sign
-    friend bool operator < (const difference &a, const difference &b) {
-        if (a.differ.first != b.differ.first) return a.differ.first < b.differ.first;
-        else if (a.differ.second == true && b.differ.second == false) return false;
-        return true;
-    }
 };
 
 template <uint width>
@@ -41,24 +38,54 @@ class Circuit {
 
     Circuit(const Circuit& other); // copy constructor
 
-    Cost cost(); // return the total cost of the circuit
+    Cost cost() const; // return the total cost of the circuit
     
     // the starting connection of the adder
     void naive_connect(std::shared_ptr<Adder<width> >& cur, int coefficient[]);
 
     void col_wise_optimization(int l_min = 3, int l_max = 5, int layer = 0); // optimize the circuit in row-wise
 
-    void print_test_info(); // print the test info
+    void print_adder_value() const; // print the value of the adder
 
-    void print_csd_form(); // print the csd form of the circuit
+    void print_csd_form() const; // print the csd form of the circuit
 
-    void print_dst(); // print the dst of the points
+    void print_dst() const; // print the dst of the points
+
+    void print_src() const; // print the src of the points
 
     void point_merge (int layer, bool is_input = false); // merge the points in the same layer
+
+    void check() const; // check the correctness of the circuit
 };
 
 template <uint width>
-void Circuit<width>::print_dst() {
+void Circuit<width>::check() const {
+    for (auto& layer: layers) {
+        for (auto& node: layer) {
+            for (int i = 0; i < m; i++) {
+                for (int j = 0; j < node->data[i].len; j++) {
+                    if (node->srcid[i][j] != -1) {
+                        assert(node->src.find(node->srcid[i][j]) != node->src.end());
+                    }
+                }
+                int sum = 0;
+                for (auto it = node->src.begin(); it != node->src.end(); it++) {
+                    assert(it->second.first.use_count() > 1);
+                    int sign = it->second.second.second ? -1 : 1;
+                    sum += (it->second.first->data[i].num << it->second.second.first) * sign;
+                }
+                assert(sum == node->data[i].num);
+            }
+            for (auto it = node->dst.begin(); it != node->dst.end(); it++) {
+                assert(it->second.first.lock() != nullptr);
+            }
+        }
+    }
+}
+
+template <uint width>
+void Circuit<width>::print_dst() const {
+    std::cout << "dst:" << std::endl;
     for (int i = 0; i < m; i++) {
         std::cout << "input " << i << " : ";
         for (auto& dst : input[i]->dst) {
@@ -78,7 +105,22 @@ void Circuit<width>::print_dst() {
 }
 
 template <uint width>
-void Circuit<width>::print_csd_form() {
+void Circuit<width>::print_src() const {
+    std::cout << "src:" << std::endl;
+    for (int i = layers.size() - 1; i >= 0; i--) {
+        for (int j = 0; j < layers[i].size(); j++) {
+            std::cout << "layer " << i << " node " << j << " : ";
+            for (auto iter = layers[i][j]->src.begin(); iter != layers[i][j]->src.end(); iter++) {
+                std::cout << "(" << iter->second.first->layerid << " " << iter->second.first->nodeid << " " << iter->second.second.first << " " << iter->second.second.second << ") ";
+            }
+            std::cout << std::endl;
+        }
+    }
+}
+
+template <uint width>
+void Circuit<width>::print_csd_form() const {
+    std::cout << "csd form:" << std::endl;
     for (int i = 0; i < m; i++) {
         std::cout << "input " << i << " : ";
         for (int j = 0; j < m; j++) {
@@ -111,12 +153,18 @@ Circuit<width>::Circuit(uint n, uint m, int* matrix, double p) : n(n), m(m), p(p
         layers[0][i] = std::make_shared<Adder<width> >(m, i, 0);
         naive_connect(layers[0][i], matrix);
     }
+    #ifdef DEBUG
+        check();
+    #endif
 }
 
 template <uint width>
 Circuit<width>::Circuit(const Circuit& other) : n(other.n), m(other.m), p(other.p) {
     std::random_device rd;
     gen = std::mt19937(rd());
+    #ifdef DEBUG
+        other.check();
+    #endif
     
     // copy the size
     input.resize(other.input.size());
@@ -161,14 +209,14 @@ Circuit<width>::Circuit(const Circuit& other) : n(other.n), m(other.m), p(other.
             }
         }
     }
+    #ifdef DEBUG
+        check();
+    #endif
 }
 
 template <uint width>
-Cost Circuit<width>::cost() {
+Cost Circuit<width>::cost() const {
     Cost ret;
-    for (int i = 0; i < m; i++) {
-        ret += input[i]->cost();
-    }
     for (int i = 0; i < layers.size(); i++) {
         for (int j = 0; j < layers[i].size(); j++) {
             if (i == 0 || layers[i][j]->dst.size() > 0)
@@ -184,7 +232,6 @@ void Circuit<width>::naive_connect(std::shared_ptr<Adder<width> >& cur, int coef
         cur->data[i] = CSD<width>(coefficient[i]);
         for (int j = 0; j < cur->data[i].len; j++) {
             Index dst_info(cur->layerid, cur->nodeid, j);
-            // std::cout << dst_info.node << " " << dst_info.bitshift << " " << dst_info.layer << " " << std::endl;
              if (cur->data[i].bits[j] == 1) {
                 cur->srcid[i][j] = cur->counter++;
                 cur->src[cur->srcid[i][j]] = std::make_pair(input[i], std::make_pair(j, false));
@@ -200,7 +247,8 @@ void Circuit<width>::naive_connect(std::shared_ptr<Adder<width> >& cur, int coef
 }
 
 template <uint width>
-void Circuit<width>::print_test_info() {
+void Circuit<width>::print_adder_value() const {
+    std::cout << "adder value:" << std::endl;
     for (int i = 0; i < m; i++) {
         std::cout << "input " << i << " : ";
         for (int j = 0; j < m; j++) {
@@ -240,6 +288,9 @@ void Circuit<width>::col_wise_optimization(int l_min, int l_max, int layer) {
             for (int i = 0; i < layers[layer].size(); i++) {
                 // 枚举字符串起点
                 for (int s = layers[layer][i]->data[j].len - l; s >= 0; s--) {
+                    #ifdef DEBUG
+                        check();
+                    #endif
                     int e = s + l;
                     assert(e <= layers[layer][i]->data[j].len);
                     if (layers[layer][i]->data[j].bits[s] == 0 || layers[layer][i]->data[j].bits[e - 1] == 0) continue;
@@ -365,10 +416,14 @@ void Circuit<width>::point_merge(int layer, bool is_input) {
 
     if (is_input) layer_p = &input;
     else layer_p = &layers[layer];
+    int co[m]; // temp array for the new adder
 
     // 枚举当前层中的两个点看能否合并
     for (int i = 0; i < (*layer_p).size(); i++) {
         for (int j = 0; j < i; j++) {
+            #ifdef DEBUG
+                check();
+            #endif
             std::vector<difference> diff; // 存储同一目标点中发生的位移和取负的差别
             for (auto iter_i = (*layer_p)[i]->dst.begin(); iter_i != (*layer_p)[i]->dst.end(); iter_i++) {
                 assert(iter_i->first.bitshift == iter_i->second.second.first);
@@ -383,7 +438,7 @@ void Circuit<width>::point_merge(int layer, bool is_input) {
                     assert(node_info.second == iter_j->first.node);
                     assert(iter_j->first.bitshift == iter_j->second.second.first);
 
-                    auto delta = std::make_pair(iter_i->first.bitshift - iter_j->first.bitshift, iter_i->second.second.second == iter_j->second.second.second);
+                    auto delta = std::make_pair(iter_i->first.bitshift - iter_j->first.bitshift, iter_i->second.second.second != iter_j->second.second.second);
                     auto shift = std::make_pair(iter_i->first.bitshift, iter_j->first.bitshift);
                     auto neg = std::make_pair(iter_i->second.second.second, iter_j->second.second.second);
                     diff.push_back(difference{node_info, shift, neg, delta});
@@ -393,7 +448,7 @@ void Circuit<width>::point_merge(int layer, bool is_input) {
             if (diff.size() == 0) continue;
 
             // find the differ with most number of use
-            std::sort(diff.begin(), diff.end());
+            std::ranges::sort(diff, {}, &difference::differ);
             
             std::vector<difference> best_diff;
             std::pair<int, bool> last;
@@ -422,10 +477,6 @@ void Circuit<width>::point_merge(int layer, bool is_input) {
                 }
                 last = diff[k].differ;
                 len++;
-            }
-            std::cout << i << " " << j << std::endl;
-            for (auto& it: best_diff) {
-                std::cout << it.index.second << std::endl;
             }
 
             // make the new adder
@@ -460,48 +511,39 @@ void Circuit<width>::point_merge(int layer, bool is_input) {
                 }
             }
             if (best_diff[0].differ.second) {
-                new_neg = sum_neg > sum_pos ? std::make_pair(true, true) : std::make_pair(false, false);
-            } else {
                 new_neg = sum_pos > sum_neg ? std::make_pair(false, true) : std::make_pair(true, false);
+            } else {
+                new_neg = sum_neg > sum_pos ? std::make_pair(true, true) : std::make_pair(false, false);
             }
 
-            // for (auto& it: best_diff) {
-            //     it.shift.first -= new_shift.first;
-            //     it.shift.second -= new_shift.second;
-            //     it.neg.first = (it.neg.first != new_neg.first);
-            //     it.neg.second = (it.neg.second != new_neg.second);
-            // }
-
+            memset(co, 0, sizeof(int) * m);
             if (keep_adderi && keep_adderj) {
                 new_node->connect((*layer_p)[i], new_shift.first, new_neg.first);
                 new_node->connect((*layer_p)[j], new_shift.second, new_neg.second);
             } else if (!keep_adderi &&!keep_adderj) {
-                int co[m];
+                int sign_1 = new_neg.first ? -1 : 1;
+                int sign_2 = new_neg.second ? -1 : 1;
                 for (int k = 0; k < m; k++) {
-                    co[k] = (*layer_p)[i]->data[k].num + (*layer_p)[j]->data[k].num;
+                    co[k] = sign_1 * ((*layer_p)[i]->data[k].num << new_shift.first) 
+                    + sign_2 * ((*layer_p)[j]->data[k].num << new_shift.second);
                 }
                 naive_connect(new_node, co);
             } else if (keep_adderi &&!keep_adderj) {
-                int co[m];
+                int sign_j = new_neg.second ? -1 : 1;
                 for (int k = 0; k < m; k++) {
-                    co[k] = (*layer_p)[j]->data[k].num;
+                    co[k] = sign_j * ((*layer_p)[j]->data[k].num << new_shift.second);
                 }
                 naive_connect(new_node, co);
                 new_node->connect((*layer_p)[i], new_shift.first, new_neg.first);
             } else if(!keep_adderi && keep_adderj) {
-                int co[m];
+                int sign_i = new_neg.first ? -1 : 1;
                 for (int k = 0; k < m; k++) {
-                    co[k] = (*layer_p)[i]->data[k].num;
+                    co[k] = sign_i * ((*layer_p)[i]->data[k].num << new_shift.first);
                 }
                 naive_connect(new_node, co);
                 new_node->connect((*layer_p)[j], new_shift.second, new_neg.second);                
             }
             new_node->update_width();
-            // std::cout << "New Node Information:" << std::endl;
-            // std::cout << "ID: " << new_node_id << std::endl;
-            // std::cout << "Layer: " << new_layer_id << std::endl;
-            // std::cout << "Shift: " << new_shift.first << ", " << new_shift.second << std::endl;
-            // std::cout << "Neg: " << new_neg.first << ", " << new_neg.second << std::endl;
             _check_point_merge_update_nice(new_node, *layer_p, best_diff, new_layer_id, new_node_id, keep_adderi, keep_adderj, std::make_pair(i, j), new_shift, new_neg);
         }
     }
@@ -515,7 +557,6 @@ bool Circuit<width>::_check_point_merge_update_nice(std::shared_ptr< Adder<width
 std::vector<std::shared_ptr<Adder<width>>>& layer, std::vector<difference>& differ, 
 int new_layer_id, int new_node_id, bool keep_adderi, bool keep_adderj, std::pair<int, int> src_node,
 std::pair<int, int> new_shift, std::pair<bool, bool> new_neg) {
-
     Cost old_cost;
     if (!keep_adderi) {
         old_cost += layer[src_node.first]->cost();
@@ -611,9 +652,7 @@ std::pair<int, int> new_shift, std::pair<bool, bool> new_neg) {
             }
         }
         layers[new_layer_id].push_back(new_node);
-
         return true;
     }
-
     return false;
 }

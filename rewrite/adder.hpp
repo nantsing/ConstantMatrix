@@ -232,7 +232,7 @@ void Adder<width>::connect(std::shared_ptr<Adder<width>>& other, int shift, bool
             assert(srcid[i][j + shift] == -1);
             srcid[i][j + shift] = new_id;
         }
-        data[i] = data[i] + (other->data[i] << shift);
+        data[i] = data[i] + (neg ? -(other->data[i] << shift) : (other->data[i] << shift));
     }
     src[new_id] = std::make_pair(other, std::make_pair(shift, neg));
     auto index = Index(layerid, nodeid, shift);

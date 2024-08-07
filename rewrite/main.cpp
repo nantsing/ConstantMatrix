@@ -1,6 +1,7 @@
 #include <iostream>
 #include <cstring>
 #include <cmath>
+// #define DEBUG
 #include "circuit.hpp"
 
 typedef unsigned int uint;
@@ -8,7 +9,7 @@ typedef unsigned int uint;
 const double B = 0.0;
 const double  C = 1.2;
 const int w = 8;
-#define ROUND 1000
+#define ROUND 10000
 
 
 int main() {
@@ -48,39 +49,32 @@ int main() {
         std::cout << std::endl;
     }
 
-    Circuit<w> circuit(n, m, matrix);
+    Circuit<w> best_circuit(n, m, matrix);
+    Circuit<w> best_circuit_copy(best_circuit);
 
-    circuit.print_csd_form();
-    circuit.print_test_info();
-    Cost best_cost = circuit.cost();
+    Cost best_cost = best_circuit.cost();
     std::cout << best_cost.sum() << std::endl;
 
-    circuit.col_wise_optimization();
-    circuit.print_csd_form();
-    circuit.print_test_info();
-    best_cost = circuit.cost();
-    std::cout << best_cost.sum() << std::endl;
-    circuit.point_merge(1);
-
-    circuit.print_csd_form();
-    circuit.print_test_info();
-    best_cost = circuit.cost();
-    std::cout << best_cost.sum() << std::endl;
-
-    return 0;
 
     for (double p = 1.0; p >= 0.0; p -= 1.0 / ROUND) {
-        Circuit<w> new_circuit(circuit);
+        Circuit<w> new_circuit(best_circuit_copy);
         new_circuit.p = p;
         new_circuit.col_wise_optimization(3, 10);
+        new_circuit.point_merge(1);
+        new_circuit.point_merge(-1, true);
         Cost cost = new_circuit.cost();
         if (cost < best_cost) {
             best_cost = cost;
-            new_circuit.print_csd_form();
-            new_circuit.print_test_info();
-            std::cout << best_cost.sum() << std::endl;
+            best_circuit = new_circuit;
         }
     }
+    best_circuit.check();
+    best_circuit.print_csd_form();
+    best_circuit.print_adder_value();
+    best_circuit.print_dst();
+    best_circuit.print_src();
+    best_cost = best_circuit.cost();
+    std::cout << best_cost.sum() << std::endl;
 
     delete [] matrix;
     return 0;

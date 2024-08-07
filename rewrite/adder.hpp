@@ -169,12 +169,12 @@ Adder<width>::Adder(const Adder& other) {
 template <uint width>
 void Adder<width>::update_width() {
     uint largest = (1 << width) - 1;
-    uint sum = 0;
+    unsigned long long sum = 0;
     for (int i = 0; i < elements; i++) {
         sum += std::abs(data[i].num) * largest;
     }
     bit_width = width;
-    while ((1 << bit_width) - 1 < sum) {
+    while ((1ull << bit_width) - 1 < sum) {
         bit_width++;
     }
 }

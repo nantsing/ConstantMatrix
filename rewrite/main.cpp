@@ -8,7 +8,7 @@ typedef unsigned int uint;
 
 const double B = 0.0;
 const double  C = 1.2;
-const int w = 8;
+const int w = 16;
 #define ROUND 10000
 
 
